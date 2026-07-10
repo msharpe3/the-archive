@@ -353,6 +353,7 @@
           <div style="height:1px; background:var(--line); margin:2px 0;"></div>
           <button class="btn btn-ghost" id="statsOpenBtn" style="width:100%; text-align:left;">📊 Collection Stats</button>
           <button class="btn btn-ghost" id="bulkTrailerBtn" style="width:100%; text-align:left;">🎬 Fetch Missing Trailers</button>
+          <button class="btn btn-ghost" id="bulkCoversBtn" style="width:100%; text-align:left;">🖼️ Fetch Alternate Covers</button>
           <button class="btn btn-ghost" id="exportBtn" style="width:100%; text-align:left;">⬇ Export Backup</button>
           <button class="btn btn-ghost" id="importBtn" style="width:100%; text-align:left;">⬆ Import Backup</button>
           <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
@@ -564,6 +565,22 @@
       <div id="bulkTrailerStatus" style="font-size:13px; color:var(--ink); margin-bottom:8px;"></div>
       <div id="bulkTrailerCount" style="font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted);"></div>
       <button class="btn btn-primary" id="bulkTrailerDoneBtn" style="width:100%; margin-top:22px; display:none;">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Cover Fetch Modal -->
+<div class="overlay" id="bulkCoversOverlay" style="display:none;">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-head">
+      <h2>Fetching Covers</h2>
+      <button class="close-x" id="closeBulkCovers" style="display:none;">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center; padding:34px 20px;">
+      <div class="spinner" id="bulkCoversSpinner" style="margin:0 auto 18px; width:22px; height:22px;"></div>
+      <div id="bulkCoversStatus" style="font-size:13px; color:var(--ink); margin-bottom:8px;"></div>
+      <div id="bulkCoversCount" style="font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted);"></div>
+      <button class="btn btn-primary" id="bulkCoversDoneBtn" style="width:100%; margin-top:22px; display:none;">Done</button>
     </div>
   </div>
 </div>
@@ -1185,7 +1202,9 @@
       $('bulkTrailerStatus').textContent = `Checking "${m.title}"…`;
       $('bulkTrailerCount').textContent = `${i + 1} of ${targets.length}`;
       try{
-        const data = await tmdbLookupByTitle(m.title, m.year);
+        const data = m.mediaType === 'tv'
+          ? await tmdbLookupTvByTitle(m.title, m.year)
+          : await tmdbLookupByTitle(m.title, m.year);
         if (data && data.trailerUrl){
           m.trailer = data.trailerUrl;
           found++;
@@ -1206,6 +1225,54 @@
   $('bulkTrailerBtn').addEventListener('click', runBulkTrailerFetch);
   $('bulkTrailerDoneBtn').addEventListener('click', ()=> $('bulkTrailerOverlay').style.display = 'none');
   $('closeBulkTrailer').addEventListener('click', ()=> $('bulkTrailerOverlay').style.display = 'none');
+
+  // ---------------- Bulk alternate cover fetch ----------------
+  async function runBulkCoverFetch(){
+    $('settingsMenu').style.display = 'none';
+    if (!getTmdbKey()){
+      toast('Add a TMDB key under 🔑 Lookup Setup first.');
+      return;
+    }
+    const targets = collection.filter(m => !(m.altPosters && m.altPosters.length));
+    if (!targets.length){
+      toast('Every movie already has alternate covers (or your archive is empty).');
+      return;
+    }
+
+    $('bulkCoversOverlay').style.display = 'flex';
+    $('bulkCoversSpinner').style.display = 'block';
+    $('bulkCoversDoneBtn').style.display = 'none';
+    $('closeBulkCovers').style.display = 'none';
+
+    let found = 0;
+    for (let i = 0; i < targets.length; i++){
+      const m = targets[i];
+      $('bulkCoversStatus').textContent = `Checking "${m.title}"…`;
+      $('bulkCoversCount').textContent = `${i + 1} of ${targets.length}`;
+      try{
+        const data = m.mediaType === 'tv'
+          ? await tmdbLookupTvByTitle(m.title, m.year)
+          : await tmdbLookupByTitle(m.title, m.year);
+        if (data && data.altPosterUrls && data.altPosterUrls.length){
+          m.altPosters = data.altPosterUrls;
+          found++;
+        }
+      }catch(e){ /* skip this one, keep going */ }
+      await new Promise(r => setTimeout(r, 300)); // stay gentle with the free API quota
+    }
+
+    await saveCollection();
+    render();
+
+    $('bulkCoversSpinner').style.display = 'none';
+    $('bulkCoversStatus').textContent = `Done — added alternate covers to ${found} of ${targets.length} movies.`;
+    $('bulkCoversCount').textContent = '';
+    $('bulkCoversDoneBtn').style.display = 'block';
+    $('closeBulkCovers').style.display = 'inline-block';
+  }
+  $('bulkCoversBtn').addEventListener('click', runBulkCoverFetch);
+  $('bulkCoversDoneBtn').addEventListener('click', ()=> $('bulkCoversOverlay').style.display = 'none');
+  $('closeBulkCovers').addEventListener('click', ()=> $('bulkCoversOverlay').style.display = 'none');
 
   $('closeDetail').onclick = closeDetail;
   $('detailOverlay').addEventListener('click', e=>{ if (e.target.id==='detailOverlay') closeDetail(); });
@@ -1560,7 +1627,7 @@
       const movie = searchData.results && searchData.results[0];
       if (!movie) return null;
 
-      const detailsRes = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${encodeURIComponent(key)}&append_to_response=credits,release_dates,videos`);
+      const detailsRes = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${encodeURIComponent(key)}&append_to_response=credits,release_dates,videos,images&include_image_language=en,null`);
       const d = await detailsRes.json();
 
       const director = ((d.credits && d.credits.crew) || []).find(c => c.job === 'Director');
@@ -1577,13 +1644,20 @@
                        || vids.find(v => v.site === 'YouTube' && v.type === 'Trailer')
                        || vids.find(v => v.site === 'YouTube');
 
+      const posterUrl = d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : '';
+      const galleryPosters = ((d.images && d.images.posters) || [])
+        .filter(p => p.file_path !== d.poster_path)
+        .map(p => `https://image.tmdb.org/t/p/w500${p.file_path}`)
+        .slice(0, 5);
+
       return {
         title: d.title || title,
         year: (d.release_date || '').slice(0, 4),
         plot: d.overview || '',
         genres: (d.genres || []).map(g => g.name).slice(0, 3),
         runtime: d.runtime ? String(d.runtime) : '',
-        posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : '',
+        posterUrl: posterUrl,
+        altPosterUrls: galleryPosters,
         director: director ? director.name : '',
         rating: rating,
         trailerUrl: trailerVid ? `https://www.youtube.com/watch?v=${trailerVid.key}` : '',
@@ -1604,7 +1678,7 @@
       const show = searchData.results && searchData.results[0];
       if (!show) return null;
 
-      const detailsRes = await fetch(`https://api.themoviedb.org/3/tv/${show.id}?api_key=${encodeURIComponent(key)}&append_to_response=content_ratings,videos`);
+      const detailsRes = await fetch(`https://api.themoviedb.org/3/tv/${show.id}?api_key=${encodeURIComponent(key)}&append_to_response=content_ratings,videos,images&include_image_language=en,null`);
       const d = await detailsRes.json();
 
       const usRating = ((d.content_ratings && d.content_ratings.results) || []).find(r => r.iso_3166_1 === 'US');
@@ -1615,13 +1689,20 @@
                        || vids.find(v => v.site === 'YouTube' && v.type === 'Trailer')
                        || vids.find(v => v.site === 'YouTube');
 
+      const posterUrl = d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : '';
+      const galleryPosters = ((d.images && d.images.posters) || [])
+        .filter(p => p.file_path !== d.poster_path)
+        .map(p => `https://image.tmdb.org/t/p/w500${p.file_path}`)
+        .slice(0, 5);
+
       return {
         title: d.name || title,
         year: (d.first_air_date || '').slice(0, 4),
         plot: d.overview || '',
         genres: (d.genres || []).map(g => g.name).slice(0, 3),
         runtime: (d.episode_run_time && d.episode_run_time[0]) ? String(d.episode_run_time[0]) : '',
-        posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : '',
+        posterUrl: posterUrl,
+        altPosterUrls: galleryPosters,
         director: (d.created_by && d.created_by.length) ? d.created_by.map(c => c.name).slice(0, 2).join(', ') : '',
         rating: rating,
         trailerUrl: trailerVid ? `https://www.youtube.com/watch?v=${trailerVid.key}` : '',
@@ -1647,6 +1728,10 @@
     $('f_trailer').value = data.trailerUrl || '';
     if (currentMediaType === 'tv' && data.numberOfSeasons && !$('f_season').value.trim()){
       $('f_season').value = `${data.numberOfSeasons} Season${data.numberOfSeasons === 1 ? '' : 's'} (series total)`;
+    }
+    if (data.altPosterUrls && data.altPosterUrls.length){
+      draftAltPosters = data.altPosterUrls.slice();
+      renderAltPosterThumbs();
     }
   }
 
