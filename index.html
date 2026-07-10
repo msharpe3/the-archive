@@ -354,6 +354,7 @@
           <button class="btn btn-ghost" id="statsOpenBtn" style="width:100%; text-align:left;">📊 Collection Stats</button>
           <button class="btn btn-ghost" id="bulkTrailerBtn" style="width:100%; text-align:left;">🎬 Fetch Missing Trailers</button>
           <button class="btn btn-ghost" id="bulkCoversBtn" style="width:100%; text-align:left;">🖼️ Fetch Alternate Covers</button>
+          <button class="btn btn-ghost" id="bulkTagsBtn" style="width:100%; text-align:left;">🏷️ Suggest Tags</button>
           <button class="btn btn-ghost" id="exportBtn" style="width:100%; text-align:left;">⬇ Export Backup</button>
           <button class="btn btn-ghost" id="importBtn" style="width:100%; text-align:left;">⬆ Import Backup</button>
           <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
@@ -1273,6 +1274,63 @@
   $('bulkCoversBtn').addEventListener('click', runBulkCoverFetch);
   $('bulkCoversDoneBtn').addEventListener('click', ()=> $('bulkCoversOverlay').style.display = 'none');
   $('closeBulkCovers').addEventListener('click', ()=> $('bulkCoversOverlay').style.display = 'none');
+
+  // ---------------- Suggest tags (rule-based, no network needed) ----------------
+  const GENRE_MOOD_MAP = {
+    'Comedy': 'Feel Good',
+    'Horror': 'Spooky',
+    'Romance': 'Date Night',
+    'Animation': 'Family Night',
+    'Family': 'Family Night',
+    'Kids': 'Family Night',
+    'Action': 'Action Packed',
+    'Adventure': 'Action Packed',
+    'Thriller': 'Edge of Your Seat',
+    'Mystery': 'Edge of Your Seat',
+    'Crime': 'Edge of Your Seat',
+    'Documentary': 'Thought-Provoking',
+    'Science Fiction': 'Escapist',
+    'Sci-Fi': 'Escapist',
+    'Fantasy': 'Escapist',
+    'War': 'Heavy Hitter',
+    'History': 'Heavy Hitter',
+  };
+  function suggestTagsFor(m){
+    const tags = new Set();
+    const y = parseInt(m.year, 10);
+    if (y) tags.add(`${Math.floor(y / 10) * 10}s`);
+
+    const text = `${m.title || ''} ${m.plot || ''}`.toLowerCase();
+    if (/\b(christmas|xmas|santa)\b/.test(text)) tags.add('Christmas');
+    if (/\b(halloween|haunted house|jack-o)\b/.test(text)) tags.add('Halloween');
+    if (/\bthanksgiving\b/.test(text)) tags.add('Thanksgiving');
+    if (/\bvalentine/.test(text)) tags.add("Valentine's Day");
+    if (/\beaster\b/.test(text)) tags.add('Easter');
+
+    (m.genres || []).forEach(g => { if (GENRE_MOOD_MAP[g]) tags.add(GENRE_MOOD_MAP[g]); });
+    return Array.from(tags);
+  }
+
+  async function runBulkTagSuggest(){
+    $('settingsMenu').style.display = 'none';
+    const targets = collection.filter(m => !(m.tags && m.tags.length));
+    if (!targets.length){
+      toast('Every movie already has tags (or your archive is empty).');
+      return;
+    }
+    const ok = await showConfirm(`Suggest tags for ${targets.length} title${targets.length === 1 ? '' : 's'} that don't have any yet? Based on year, genre, and holiday keywords — you can always edit them after.`);
+    if (!ok) return;
+
+    let count = 0;
+    targets.forEach(m=>{
+      const suggested = suggestTagsFor(m);
+      if (suggested.length){ m.tags = suggested; count++; }
+    });
+    await saveCollection();
+    render();
+    toast(`Added suggested tags to ${count} of ${targets.length} titles.`);
+  }
+  $('bulkTagsBtn').addEventListener('click', runBulkTagSuggest);
 
   $('closeDetail').onclick = closeDetail;
   $('detailOverlay').addEventListener('click', e=>{ if (e.target.id==='detailOverlay') closeDetail(); });
