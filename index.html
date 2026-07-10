@@ -351,7 +351,7 @@
   </header>
 
   <div class="controls">
-    <button class="btn btn-primary" id="openAddBtn">+ Add Movie</button>
+    <button class="btn btn-primary" id="openAddBtn">+ Add Title</button>
     <input class="search" id="searchInput" placeholder="Search the archive…" />
     <select class="filter" id="genreFilter"><option value="all">All Genres</option></select>
     <select class="filter" id="tagFilter"><option value="all">All Tags</option></select>
@@ -361,6 +361,11 @@
       <option value="VHS">VHS</option>
       <option value="Blu-ray">Blu-ray</option>
       <option value="Other">Other</option>
+    </select>
+    <select class="filter" id="typeFilter">
+      <option value="all">Movies &amp; TV</option>
+      <option value="movie">Movies Only</option>
+      <option value="tv">TV Shows Only</option>
     </select>
     <select class="filter" id="sortBy">
       <option value="recent">Recently Added</option>
@@ -435,9 +440,21 @@
 
       <div class="divider">details</div>
 
+      <div class="field" style="margin-bottom:14px;">
+        <label>Media Type</label>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="tab active" data-type="movie" id="typeMovieBtn" style="flex:1;">🎬 Movie</button>
+          <button type="button" class="tab" data-type="tv" id="typeTvBtn" style="flex:1;">📺 TV Show</button>
+        </div>
+      </div>
+
       <div class="row2">
-        <div class="field"><label>Title *</label><input id="f_title" placeholder="Movie title"/></div>
+        <div class="field"><label id="titleLabel">Title *</label><input id="f_title" placeholder="Movie title"/></div>
         <div class="field"><label>Year</label><input id="f_year" placeholder="1999"/></div>
+      </div>
+      <div class="field" id="seasonField" style="display:none;">
+        <label>Season(s)</label>
+        <input id="f_season" placeholder="Season 1, Seasons 1-3, or Complete Series" />
       </div>
       <div class="row2">
         <div class="field">
@@ -446,10 +463,10 @@
             <option>DVD</option><option>VHS</option><option>Blu-ray</option><option>Other</option>
           </select>
         </div>
-        <div class="field"><label>MPAA Rating</label><input id="f_rating" placeholder="PG-13"/></div>
+        <div class="field"><label id="ratingLabel">MPAA Rating</label><input id="f_rating" placeholder="PG-13"/></div>
       </div>
-      <div class="field"><label>Runtime</label><input id="f_runtime" placeholder="1 Hr. 45 Min."/></div>
-      <div class="field"><label>Director</label><input id="f_director" placeholder="Director name"/></div>
+      <div class="field"><label id="runtimeLabel">Runtime</label><input id="f_runtime" placeholder="1 Hr. 45 Min."/></div>
+      <div class="field"><label id="directorLabel">Director</label><input id="f_director" placeholder="Director name"/></div>
       <div class="field"><label>Genres (comma separated)</label><input id="f_genres" placeholder="Action, Comedy"/></div>
       <div class="field"><label>Tags — genre, season, mood (comma separated)</label><input id="f_tags" placeholder="Christmas, Rainy Day, 90s"/></div>
       <div class="field"><label>Plot / Notes</label><textarea id="f_plot" placeholder="Short synopsis…"></textarea></div>
@@ -571,6 +588,18 @@
         <button class="btn btn-primary" id="saveTmdbKeyBtn">Save</button>
       </div>
       <div id="tmdbKeyStatus" style="margin-top:10px;"></div>
+
+      <div class="divider">backup barcode source (optional)</div>
+      <p class="scan-hint" style="text-align:left; padding-left:0;">
+        Barcode scans try one free product database first. Adding a free key from
+        <a href="https://eandata.com/feed/" target="_blank" rel="noopener" style="color:var(--amber);">eandata.com</a>
+        gives it a second source to try if the first one misses — worth adding if scans are coming up empty often.
+      </p>
+      <div class="lookup-row">
+        <input id="eandataKeyInput" placeholder="Paste your eandata.com key" />
+        <button class="btn btn-primary" id="saveEandataKeyBtn">Save</button>
+      </div>
+      <div id="eandataKeyStatus" style="margin-top:10px;"></div>
     </div>
   </div>
 </div>
@@ -597,6 +626,7 @@
   // ---------------- State ----------------
   let collection = [];
   let editingId = null;
+  let currentMediaType = 'movie';
   let html5Qrcode = null;
   let camRunning = false;
   let flashOn = false;
@@ -755,6 +785,7 @@
     const genre = $('genreFilter').value;
     const format = $('formatFilter').value;
     const tag = $('tagFilter').value;
+    const type = $('typeFilter').value;
     const sortBy = $('sortBy').value;
 
     let list = collection.filter(m=>{
@@ -762,6 +793,7 @@
       if (genre !== 'all' && !(m.genres||[]).includes(genre)) return false;
       if (format !== 'all' && m.format !== format) return false;
       if (tag !== 'all' && !(m.tags||[]).includes(tag)) return false;
+      if (type !== 'all' && (m.mediaType||'movie') !== type) return false;
       return true;
     });
 
@@ -832,6 +864,7 @@
         <div class="meta">
           <p class="title">${escapeHtml(m.title)}${m.year?` <span style="color:var(--muted);font-weight:400;">(${escapeHtml(m.year)})</span>`:''}</p>
           <div class="badgerow">
+            ${m.mediaType === 'tv' ? `<span class="badge fmt">📺 TV</span>` : ''}
             <span class="badge fmt">${escapeHtml(m.format||'DVD')}</span>
             ${m.rating ? `<span class="badge rate">${escapeHtml(m.rating)}</span>` : ''}
             ${siblingCount > 0 ? `<span class="badge rate" title="You own ${siblingCount + 1} copies of this title">🎞️ ×${siblingCount + 1}</span>` : ''}
@@ -857,14 +890,16 @@
         ${poster}
         <div class="detail-info">
           <h3>${escapeHtml(m.title)}</h3>
-          <div class="sub">${escapeHtml(m.year||'')} ${m.runtime? '· '+escapeHtml(formatRuntime(m.runtime)):''} ${m.director? '· dir. '+escapeHtml(m.director):''}</div>
+          <div class="sub">${escapeHtml(m.year||'')} ${m.runtime? '· '+escapeHtml(formatRuntime(m.runtime)):''} ${m.director? (m.mediaType==='tv' ? ' · created by '+escapeHtml(m.director) : ' · dir. '+escapeHtml(m.director)):''}</div>
           <div class="badgerow">
+            ${m.mediaType === 'tv' ? `<span class="badge fmt">📺 TV</span>` : ''}
             <span class="badge fmt">${escapeHtml(m.format||'DVD')}</span>
             ${m.rating ? `<span class="badge rate">${escapeHtml(m.rating)}</span>` : ''}
             ${(m.genres||[]).map(g=>`<span class="badge fmt">${escapeHtml(g)}</span>`).join('')}
           </div>
         </div>
       </div>
+      ${m.season ? `<p style="font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--teal); margin:0 0 12px;">${escapeHtml(m.season)}</p>` : ''}
       ${m.plot ? `<p class="plot">${escapeHtml(m.plot)}</p>` : ''}
       ${trailerId ? `
         <div style="border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:14px; background:var(--panel);">
@@ -1137,10 +1172,26 @@
   $('detailOverlay').addEventListener('click', e=>{ if (e.target.id==='detailOverlay') closeDetail(); });
 
   // ---------------- Add / Edit modal ----------------
+  function setMediaType(type){
+    currentMediaType = type;
+    $('typeMovieBtn').classList.toggle('active', type === 'movie');
+    $('typeTvBtn').classList.toggle('active', type === 'tv');
+    $('seasonField').style.display = type === 'tv' ? 'block' : 'none';
+    $('titleLabel').textContent = type === 'tv' ? 'Series Title *' : 'Title *';
+    $('directorLabel').textContent = type === 'tv' ? 'Creator' : 'Director';
+    $('runtimeLabel').textContent = type === 'tv' ? 'Episode Runtime' : 'Runtime';
+    $('ratingLabel').textContent = type === 'tv' ? 'TV Rating' : 'MPAA Rating';
+    $('f_title').placeholder = type === 'tv' ? 'Series title' : 'Movie title';
+    $('addModalTitle').textContent = (editingId ? 'Edit ' : 'Add a ') + (type === 'tv' ? 'TV Show' : 'Movie');
+  }
+  $('typeMovieBtn').addEventListener('click', ()=> setMediaType('movie'));
+  $('typeTvBtn').addEventListener('click', ()=> setMediaType('tv'));
+
   function resetDraftForm(){
-    ['f_title','f_year','f_rating','f_runtime','f_director','f_genres','f_tags','f_plot','f_trailer','f_barcode','f_poster']
+    ['f_title','f_year','f_rating','f_runtime','f_director','f_genres','f_tags','f_plot','f_trailer','f_barcode','f_poster','f_season']
       .forEach(id => $(id).value = '');
     $('f_format').value = 'DVD';
+    setMediaType('movie');
     $('draftPosterImg').style.display = 'none';
     $('draftPosterFallback').style.display = 'flex';
     $('draftPosterFallback').textContent = '?';
@@ -1196,9 +1247,10 @@
     const m = collection.find(x=>x.id===id);
     if (!m) return;
     editingId = id;
-    $('addModalTitle').textContent = 'Edit Movie';
+    $('addModalTitle').textContent = 'Edit ' + (m.mediaType === 'tv' ? 'TV Show' : 'Movie');
     resetDraftForm();
     switchTab('manual');
+    setMediaType(m.mediaType === 'tv' ? 'tv' : 'movie');
     $('f_title').value = m.title||'';
     $('f_year').value = m.year||'';
     $('f_format').value = m.format||'DVD';
@@ -1210,6 +1262,7 @@
     $('f_plot').value = m.plot||'';
     $('f_trailer').value = m.trailer||'';
     $('f_barcode').value = m.barcode||'';
+    $('f_season').value = m.season||'';
     $('f_poster').value = m.posterUrl||'';
     updateDraftPoster(m.posterUrl, m.title);
     $('addOverlay').style.display = 'flex';
@@ -1285,9 +1338,11 @@
 
   function buildScanConfig(){
     const base = {
-      fps: 15,
-      qrbox: { width: 300, height: 110 },
-      useBarCodeDetectorIfSupported: true
+      fps: 20,
+      qrbox: { width: 320, height: 110 },
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true
+      }
     };
     try{
       if (typeof Html5QrcodeSupportedFormats !== 'undefined'){
@@ -1314,23 +1369,35 @@
     }
     html5Qrcode = new Html5Qrcode('reader');
     const config = buildScanConfig();
-    html5Qrcode.start(
-      { facingMode: 'environment' },
-      config,
-      (decodedText)=>{
-        $('barcodeInput').value = decodedText;
-        stopCamera();
-        lookupBarcode(decodedText);
-      },
-      ()=>{ /* per-frame scan failure, ignore */ }
-    ).then(()=>{
+    const onDecode = (decodedText)=>{
+      $('barcodeInput').value = decodedText;
+      stopCamera();
+      lookupBarcode(decodedText);
+    };
+    const onFail = ()=>{ /* per-frame scan failure, ignore */ };
+    const onStarted = ()=>{
       camRunning = true;
       $('scanHint').textContent = 'Fill the box with just the barcode — hold steady, well-lit, ~6 in away.';
       $('startCamBtn').style.display='none';
       $('stopCamBtn').style.display='block';
       checkFlashSupport();
-    }).catch(()=>{
-      $('scanHint').textContent = 'Camera unavailable in this browser — use manual entry below.';
+    };
+
+    // Try a higher-resolution, continuously-focused feed first — sharper video
+    // means faster, more reliable decodes. Some devices reject these extra
+    // constraints, so fall back to a plain environment-facing camera if so.
+    html5Qrcode.start(
+      {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        advanced: [{ focusMode: 'continuous' }]
+      },
+      config, onDecode, onFail
+    ).then(onStarted).catch(()=>{
+      html5Qrcode.start({ facingMode: 'environment' }, config, onDecode, onFail)
+        .then(onStarted)
+        .catch(()=>{ $('scanHint').textContent = 'Camera unavailable in this browser — use manual entry below.'; });
     });
   }
   function stopCamera(){
@@ -1435,6 +1502,45 @@
     }
   }
 
+  async function tmdbLookupTvByTitle(title, year){
+    const key = getTmdbKey();
+    if (!key || !title) return null;
+    try{
+      let searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(title)}`;
+      if (year) searchUrl += `&first_air_date_year=${encodeURIComponent(year)}`;
+      const searchRes = await fetch(searchUrl);
+      const searchData = await searchRes.json();
+      const show = searchData.results && searchData.results[0];
+      if (!show) return null;
+
+      const detailsRes = await fetch(`https://api.themoviedb.org/3/tv/${show.id}?api_key=${encodeURIComponent(key)}&append_to_response=content_ratings,videos`);
+      const d = await detailsRes.json();
+
+      const usRating = ((d.content_ratings && d.content_ratings.results) || []).find(r => r.iso_3166_1 === 'US');
+      const rating = usRating ? usRating.rating : '';
+
+      const vids = (d.videos && d.videos.results) || [];
+      const trailerVid = vids.find(v => v.site === 'YouTube' && v.type === 'Trailer' && v.official)
+                       || vids.find(v => v.site === 'YouTube' && v.type === 'Trailer')
+                       || vids.find(v => v.site === 'YouTube');
+
+      return {
+        title: d.name || title,
+        year: (d.first_air_date || '').slice(0, 4),
+        plot: d.overview || '',
+        genres: (d.genres || []).map(g => g.name).slice(0, 3),
+        runtime: (d.episode_run_time && d.episode_run_time[0]) ? String(d.episode_run_time[0]) : '',
+        posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : '',
+        director: (d.created_by && d.created_by.length) ? d.created_by.map(c => c.name).slice(0, 2).join(', ') : '',
+        rating: rating,
+        trailerUrl: trailerVid ? `https://www.youtube.com/watch?v=${trailerVid.key}` : '',
+        numberOfSeasons: d.number_of_seasons || null,
+      };
+    }catch(e){
+      return null;
+    }
+  }
+
   function fillDraftFromTmdb(data, fallbackTitle, fallbackPoster, fallbackFormat){
     $('f_title').value = data.title || fallbackTitle || $('f_title').value;
     $('f_year').value = data.year || $('f_year').value;
@@ -1448,13 +1554,17 @@
     $('f_poster').value = poster;
     updateDraftPoster(poster, $('f_title').value);
     $('f_trailer').value = data.trailerUrl || '';
+    if (currentMediaType === 'tv' && data.numberOfSeasons && !$('f_season').value.trim()){
+      $('f_season').value = `${data.numberOfSeasons} Season${data.numberOfSeasons === 1 ? '' : 's'} (series total)`;
+    }
   }
 
-  async function omdbLookupByTitle(title, year){
+  async function omdbLookupByTitle(title, year, type){
     const key = getOmdbKey();
     if (!key) throw new Error('no omdb key');
     let url = `https://www.omdbapi.com/?apikey=${encodeURIComponent(key)}&t=${encodeURIComponent(title)}`;
     if (year) url += `&y=${encodeURIComponent(year)}`;
+    if (type) url += `&type=${encodeURIComponent(type)}`;
     const res = await fetch(url);
     const data = await res.json();
     if (data.Response === 'False') return null;
@@ -1506,6 +1616,45 @@
     return data.items[0];
   }
 
+  const EANDATA_KEY_STORAGE = 'shelf_eandata_key_v1';
+  function getEandataKey(){ return localStorage.getItem(EANDATA_KEY_STORAGE) || ''; }
+  function setEandataKey(k){ localStorage.setItem(EANDATA_KEY_STORAGE, k); }
+
+  async function eandataLookup(barcode){
+    const key = getEandataKey();
+    if (!key) return null;
+    try{
+      const res = await fetch(`https://eandata.com/feed/?v=3&mode=json&keycode=${encodeURIComponent(key)}&find=${encodeURIComponent(barcode)}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data || !data.product) return null;
+      const attrs = data.product.attributes || {};
+      const title = attrs.product || attrs.title || data.product.title || '';
+      if (!title) return null;
+      return {
+        title,
+        category: attrs.category || '',
+        description: attrs.description || '',
+        images: data.product.images ? [data.product.images] : [],
+      };
+    }catch(e){
+      return null;
+    }
+  }
+
+  // Tries the primary barcode database first, then a second free source if that misses.
+  async function findProductByBarcode(barcode){
+    try{
+      const primary = await upcLookup(barcode);
+      if (primary) return primary;
+    }catch(e){ /* fall through to the backup source */ }
+    try{
+      const secondary = await eandataLookup(barcode);
+      if (secondary) return secondary;
+    }catch(e){ /* both sources came up empty */ }
+    return null;
+  }
+
   async function lookupBarcode(barcode){
     $('f_barcode').value = barcode;
     switchTab('manual');
@@ -1513,7 +1662,7 @@
 
     let product;
     try{
-      product = await upcLookup(barcode);
+      product = await findProductByBarcode(barcode);
     }catch(networkErr){
       setStatus(`<div class="status-line" style="color:var(--pink);">Automatic lookup didn't come through this time. Type the title below and tap "Fetch Info".</div>`);
       setTimeout(()=> $('titleLookupInput').focus(), 50);
@@ -1530,26 +1679,30 @@
     const productImage = (product.images && product.images.length) ? product.images[0] : '';
     const guessedFormat = guessFormatFromText(product.title, product.category, product.description);
 
+    const productText = `${product.title || ''} ${product.category || ''} ${product.description || ''}`;
+    const looksLikeTv = /\b(season|seasons|complete series|tv series)\b/i.test(productText) && !/\bmotion picture\b/i.test(productText);
+    setMediaType(looksLikeTv ? 'tv' : 'movie');
+
     if (!getOmdbKey() && !getTmdbKey()){
       $('f_title').value = searchTitle;
       if (guessedFormat) $('f_format').value = guessedFormat;
       $('f_poster').value = productImage;
       updateDraftPoster(productImage, searchTitle);
-      setStatus(`<div class="status-line" style="color:var(--pink);">Found the product, but no movie database key is set — add one under 🔑 Lookup Setup to auto-fill genre, plot, and rating.</div>`);
+      setStatus(`<div class="status-line" style="color:var(--pink);">Found the product, but no ${looksLikeTv ? 'TV' : 'movie'} database key is set — add one under 🔑 Lookup Setup to auto-fill genre, plot, and rating.</div>`);
       return;
     }
 
     let matched = false;
     try{
       if (getTmdbKey()){
-        const tmdb = await tmdbLookupByTitle(searchTitle);
+        const tmdb = looksLikeTv ? await tmdbLookupTvByTitle(searchTitle) : await tmdbLookupByTitle(searchTitle);
         if (tmdb){
           fillDraftFromTmdb(tmdb, searchTitle, productImage, guessedFormat);
           matched = true;
         }
       }
       if (!matched && getOmdbKey()){
-        const omdb = await omdbLookupByTitle(searchTitle);
+        const omdb = await omdbLookupByTitle(searchTitle, null, looksLikeTv ? 'series' : 'movie');
         await fillDraftFromOmdb(omdb, searchTitle, productImage, guessedFormat);
         matched = !!omdb;
       }
@@ -1584,9 +1737,10 @@
       return;
     }
     setStatus(`<div class="status-line"><span class="spinner"></span> Searching for "${escapeHtml(title)}"…</div>`);
+    const isTv = currentMediaType === 'tv';
     try{
       if (getTmdbKey()){
-        const tmdb = await tmdbLookupByTitle(title);
+        const tmdb = isTv ? await tmdbLookupTvByTitle(title) : await tmdbLookupByTitle(title);
         if (tmdb){
           fillDraftFromTmdb(tmdb, title);
           setStatus(`<div class="status-line" style="color:var(--teal);">Found it — double-check the details below before saving.</div>`);
@@ -1594,7 +1748,7 @@
         }
       }
       if (getOmdbKey()){
-        const omdb = await omdbLookupByTitle(title);
+        const omdb = await omdbLookupByTitle(title, null, isTv ? 'series' : 'movie');
         if (omdb){
           await fillDraftFromOmdb(omdb, title);
           setStatus(`<div class="status-line" style="color:var(--teal);">Found it — double-check the details below before saving.</div>`);
@@ -1616,6 +1770,8 @@
 
     const draft = {
       title,
+      mediaType: currentMediaType,
+      season: currentMediaType === 'tv' ? $('f_season').value.trim() : '',
       year: $('f_year').value.trim(),
       format: $('f_format').value,
       rating: $('f_rating').value.trim(),
@@ -1652,7 +1808,7 @@
   $('saveMovieBtn').addEventListener('click', saveCurrentDraft);
 
   // ---------------- Filter listeners ----------------
-  ['searchInput','genreFilter','formatFilter','tagFilter','sortBy'].forEach(id=>{
+  ['searchInput','genreFilter','formatFilter','tagFilter','typeFilter','sortBy'].forEach(id=>{
     $(id).addEventListener('input', render);
     $(id).addEventListener('change', render);
   });
@@ -1753,6 +1909,12 @@
     $('tmdbKeyStatus').innerHTML = tmdbKey
       ? `<div class="status-line" style="color:var(--teal);">Key saved — trailers will auto-fill.</div>`
       : `<div class="status-line">No key yet — trailer links won't auto-fill (you can still paste them in by hand).</div>`;
+
+    const eandataKey = getEandataKey();
+    $('eandataKeyInput').value = eandataKey;
+    $('eandataKeyStatus').innerHTML = eandataKey
+      ? `<div class="status-line" style="color:var(--teal);">Key saved — scans will try this as a backup source.</div>`
+      : `<div class="status-line">No key yet — only the first barcode source will be tried.</div>`;
   }
   $('lookupSettingsBtn').addEventListener('click', ()=>{ refreshLookupSettings(); $('lookupSettingsOverlay').style.display='flex'; });
   $('closeLookupSettings').addEventListener('click', ()=> $('lookupSettingsOverlay').style.display='none');
@@ -1770,6 +1932,13 @@
     setTmdbKey(key);
     refreshLookupSettings();
     toast('Trailer key saved.');
+  });
+  $('saveEandataKeyBtn').addEventListener('click', ()=>{
+    const key = $('eandataKeyInput').value.trim();
+    if (!key){ toast('Paste a key first.'); return; }
+    setEandataKey(key);
+    refreshLookupSettings();
+    toast('Backup barcode source saved.');
   });
 
   // ---------------- Init ----------------
