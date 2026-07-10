@@ -350,6 +350,7 @@
         <div id="settingsMenu" style="display:none; position:absolute; right:0; top:calc(100% + 8px); background:var(--panel); border:1px solid var(--line); border-radius:6px; box-shadow:var(--shadow); padding:8px; flex-direction:column; gap:6px; min-width:190px; z-index:10;">
           <button class="btn btn-ghost" id="syncOpenBtn" style="width:100%; text-align:left;">🔄 Sync Devices</button>
           <button class="btn btn-ghost" id="lookupSettingsBtn" style="width:100%; text-align:left;">🔑 Lookup Setup</button>
+          <button class="btn btn-ghost" id="wishlistOpenBtn" style="width:100%; text-align:left;">⭐ Wishlist</button>
           <div style="height:1px; background:var(--line); margin:2px 0;"></div>
           <button class="btn btn-ghost" id="statsOpenBtn" style="width:100%; text-align:left;">📊 Collection Stats</button>
           <button class="btn btn-ghost" id="bulkTrailerBtn" style="width:100%; text-align:left;">🎬 Fetch Missing Trailers</button>
@@ -365,7 +366,7 @@
 
   <div class="controls">
     <button class="btn btn-primary" id="openAddBtn">+ Add Title</button>
-    <input class="search" id="searchInput" placeholder="Search the archive…" />
+    <input class="search" id="searchInput" placeholder="Search title, director, or cast…" />
     <select class="filter" id="genreFilter"><option value="all">All Genres</option></select>
     <select class="filter" id="tagFilter"><option value="all">All Tags</option></select>
     <select class="filter" id="formatFilter">
@@ -586,6 +587,28 @@
   </div>
 </div>
 
+<!-- Wishlist Modal -->
+<div class="overlay" id="wishlistOverlay" style="display:none;">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head">
+      <h2>Wishlist</h2>
+      <button class="close-x" id="closeWishlist">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="scan-hint" style="text-align:left; padding-left:0;">
+        Titles you don't own yet — separate from your real archive. Handy for browsing thrift stores or remembering what to look for.
+      </p>
+      <div class="lookup-row">
+        <input id="wishlistTitleInput" placeholder="Movie or show title" />
+        <button class="btn btn-primary" id="wishlistAddBtn">Add</button>
+      </div>
+      <div id="wishlistStatus" style="margin:8px 0;"></div>
+      <div class="divider">on your list</div>
+      <div id="wishlistBody"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Stats Modal -->
 <div class="overlay" id="statsOverlay" style="display:none;">
   <div class="modal" style="max-width:480px;">
@@ -667,6 +690,7 @@
   let editingId = null;
   let currentMediaType = 'movie';
   let draftAltPosters = [];
+  let currentDraftCast = [];
   let html5Qrcode = null;
   let camRunning = false;
   let flashOn = false;
@@ -698,9 +722,11 @@
 
   // ---------------- Storage: local cache + Firestore cloud sync ----------------
   const LOCAL_KEY = 'shelf_collection_v1';
+  const WISHLIST_LOCAL_KEY = 'shelf_wishlist_v1';
   const CODE_KEY = 'shelf_sync_code_v1';
   const CONFIG_KEY = 'shelf_firebase_config_v1';
 
+  let wishlist = [];
   let fbApp = null, fbDb = null, unsubscribe = null;
   let applyingRemoteUpdate = false;
 
@@ -717,6 +743,13 @@
   }
   function saveLocal(){
     try{ localStorage.setItem(LOCAL_KEY, JSON.stringify(collection)); }catch(e){}
+  }
+  function loadWishlistLocal(){
+    try{ const raw = localStorage.getItem(WISHLIST_LOCAL_KEY); return raw ? JSON.parse(raw) : []; }
+    catch(e){ return []; }
+  }
+  function saveWishlistLocal(){
+    try{ localStorage.setItem(WISHLIST_LOCAL_KEY, JSON.stringify(wishlist)); }catch(e){}
   }
 
   function initFirebase(){
@@ -741,7 +774,8 @@
         const data = doc.data();
         applyingRemoteUpdate = true;
         collection = Array.isArray(data.movies) ? data.movies : [];
-        saveLocal(); render();
+        wishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
+        saveLocal(); saveWishlistLocal(); render();
         applyingRemoteUpdate = false;
       },
       ()=>{ setSyncStatus('Cloud connection lost — showing the local copy on this device.', true); }
@@ -752,7 +786,7 @@
     const code = getSyncCode();
     if (!fbDb || !code) return;
     try{
-      await fbDb.collection('households').doc(code).set({ movies: collection, updatedAt: Date.now() });
+      await fbDb.collection('households').doc(code).set({ movies: collection, wishlist: wishlist, updatedAt: Date.now() });
     }catch(e){
       toast('Saved on this device — cloud sync failed to push.');
     }
@@ -760,6 +794,7 @@
 
   async function loadCollection(){
     collection = loadLocal();
+    wishlist = loadWishlistLocal();
     if (initFirebase()){
       attachRealtimeSync();
     }
@@ -767,6 +802,7 @@
 
   async function saveCollection(){
     saveLocal();
+    saveWishlistLocal();
     if (!applyingRemoteUpdate) await pushToCloud();
   }
 
@@ -829,7 +865,7 @@
     const sortBy = $('sortBy').value;
 
     let list = collection.filter(m=>{
-      if (search && !(`${m.title} ${m.director||''}`.toLowerCase().includes(search))) return false;
+      if (search && !(`${m.title} ${m.director||''} ${(m.cast||[]).join(' ')}`.toLowerCase().includes(search))) return false;
       if (genre !== 'all' && !(m.genres||[]).includes(genre)) return false;
       if (format !== 'all' && m.format !== format) return false;
       if (tag !== 'all' && !(m.tags||[]).includes(tag)) return false;
@@ -957,6 +993,7 @@
         </div>
       </div>
       ${m.season ? `<p style="font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--teal); margin:0 0 12px;">${escapeHtml(m.season)}</p>` : ''}
+      ${(m.cast && m.cast.length) ? `<p style="font-size:12px; color:var(--muted); margin:0 0 12px;"><strong style="color:var(--ink);">Starring:</strong> ${m.cast.map(escapeHtml).join(', ')}</p>` : ''}
       ${m.plot ? `<p class="plot">${escapeHtml(m.plot)}</p>` : ''}
       ${trailerId ? `
         <div style="border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:14px; background:var(--panel);">
@@ -1332,6 +1369,99 @@
   }
   $('bulkTagsBtn').addEventListener('click', runBulkTagSuggest);
 
+  // ---------------- Wishlist ----------------
+  function renderWishlist(){
+    if (!wishlist.length){
+      $('wishlistBody').innerHTML = `<p style="text-align:center; color:var(--muted); padding:20px 0; font-size:13px;">Nothing on your wishlist yet.</p>`;
+      return;
+    }
+    $('wishlistBody').innerHTML = wishlist.map(w => `
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
+        ${w.posterUrl
+          ? `<img src="${escapeAttr(w.posterUrl)}" style="width:36px; height:54px; object-fit:cover; border-radius:3px; flex-shrink:0;" onerror="this.style.opacity='0.3'" />`
+          : `<div style="width:36px; height:54px; border-radius:3px; background:#0a1f4d; flex-shrink:0;"></div>`}
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:13px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(w.title)}${w.year ? ` <span style="color:var(--muted);">(${escapeHtml(w.year)})</span>` : ''}</div>
+        </div>
+        <button type="button" class="btn btn-primary wishlist-promote" data-id="${escapeAttr(w.id)}" style="font-size:11px; padding:6px 10px; flex-shrink:0;">➕ Add</button>
+        <button type="button" class="btn btn-danger wishlist-remove" data-id="${escapeAttr(w.id)}" style="font-size:11px; padding:6px 10px; flex-shrink:0;">🗑</button>
+      </div>`).join('');
+
+    document.querySelectorAll('.wishlist-promote').forEach(btn=>{
+      btn.addEventListener('click', ()=> promoteWishlistItem(btn.dataset.id));
+    });
+    document.querySelectorAll('.wishlist-remove').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const item = wishlist.find(w => w.id === btn.dataset.id);
+        const ok = await showConfirm(`Remove "${item ? item.title : 'this title'}" from your wishlist?`);
+        if (!ok) return;
+        wishlist = wishlist.filter(w => w.id !== btn.dataset.id);
+        saveCollection();
+        renderWishlist();
+      });
+    });
+  }
+
+  async function addToWishlist(title){
+    const item = {
+      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random())),
+      title, year: '', posterUrl: '', mediaType: 'movie', dateAdded: Date.now()
+    };
+    wishlist.push(item);
+    renderWishlist();
+    saveCollection();
+
+    // Best-effort background lookup for a poster/year — doesn't block adding the title.
+    try{
+      let data = null;
+      if (getTmdbKey()) data = await tmdbLookupByTitle(title);
+      if (!data && getOmdbKey()){
+        const omdb = await omdbLookupByTitle(title);
+        if (omdb) data = { year: (omdb.Year || '').slice(0, 4), posterUrl: (omdb.Poster && omdb.Poster !== 'N/A') ? omdb.Poster : '' };
+      }
+      if (data){
+        const idx = wishlist.findIndex(w => w.id === item.id);
+        if (idx > -1){
+          wishlist[idx].year = data.year || '';
+          wishlist[idx].posterUrl = data.posterUrl || '';
+          renderWishlist();
+          saveCollection();
+        }
+      }
+    }catch(e){ /* title-only entry is still useful without a poster */ }
+  }
+
+  function promoteWishlistItem(id){
+    const item = wishlist.find(w => w.id === id);
+    if (!item) return;
+    wishlist = wishlist.filter(w => w.id !== id);
+    saveCollection();
+    $('wishlistOverlay').style.display = 'none';
+    openAdd();
+    setMediaType(item.mediaType === 'tv' ? 'tv' : 'movie');
+    $('f_title').value = item.title || '';
+    $('f_year').value = item.year || '';
+    $('f_poster').value = item.posterUrl || '';
+    updateDraftPoster(item.posterUrl, item.title);
+    switchTab('manual');
+    toast('Moved to the Add form — fill in the rest and save.');
+  }
+
+  $('wishlistOpenBtn').addEventListener('click', ()=>{
+    $('settingsMenu').style.display = 'none';
+    renderWishlist();
+    $('wishlistOverlay').style.display = 'flex';
+  });
+  $('closeWishlist').addEventListener('click', ()=> $('wishlistOverlay').style.display = 'none');
+  $('wishlistOverlay').addEventListener('click', e=>{ if (e.target.id==='wishlistOverlay') $('wishlistOverlay').style.display='none'; });
+  $('wishlistAddBtn').addEventListener('click', ()=>{
+    const title = $('wishlistTitleInput').value.trim();
+    if (!title){ toast('Type a title first.'); return; }
+    addToWishlist(title);
+    $('wishlistTitleInput').value = '';
+    toast('Added to wishlist.');
+  });
+
   $('closeDetail').onclick = closeDetail;
   $('detailOverlay').addEventListener('click', e=>{ if (e.target.id==='detailOverlay') closeDetail(); });
 
@@ -1404,6 +1534,7 @@
     setMediaType('movie');
     draftAltPosters = [];
     renderAltPosterThumbs();
+    currentDraftCast = [];
     $('draftPosterImg').style.display = 'none';
     $('draftPosterFallback').style.display = 'flex';
     $('draftPosterFallback').textContent = '?';
@@ -1478,6 +1609,7 @@
     $('f_poster').value = m.posterUrl||'';
     updateDraftPoster(m.posterUrl, m.title);
     draftAltPosters = (m.altPosters || []).slice();
+    currentDraftCast = (m.cast || []).slice();
     renderAltPosterThumbs();
     $('addOverlay').style.display = 'flex';
   }
@@ -1689,6 +1821,7 @@
       const d = await detailsRes.json();
 
       const director = ((d.credits && d.credits.crew) || []).find(c => c.job === 'Director');
+      const cast = ((d.credits && d.credits.cast) || []).slice(0, 6).map(c => c.name);
 
       const usRelease = ((d.release_dates && d.release_dates.results) || []).find(r => r.iso_3166_1 === 'US');
       let rating = '';
@@ -1717,6 +1850,7 @@
         posterUrl: posterUrl,
         altPosterUrls: galleryPosters,
         director: director ? director.name : '',
+        cast: cast,
         rating: rating,
         trailerUrl: trailerVid ? `https://www.youtube.com/watch?v=${trailerVid.key}` : '',
       };
@@ -1736,11 +1870,12 @@
       const show = searchData.results && searchData.results[0];
       if (!show) return null;
 
-      const detailsRes = await fetch(`https://api.themoviedb.org/3/tv/${show.id}?api_key=${encodeURIComponent(key)}&append_to_response=content_ratings,videos,images&include_image_language=en,null`);
+      const detailsRes = await fetch(`https://api.themoviedb.org/3/tv/${show.id}?api_key=${encodeURIComponent(key)}&append_to_response=content_ratings,videos,images,credits&include_image_language=en,null`);
       const d = await detailsRes.json();
 
       const usRating = ((d.content_ratings && d.content_ratings.results) || []).find(r => r.iso_3166_1 === 'US');
       const rating = usRating ? usRating.rating : '';
+      const cast = ((d.credits && d.credits.cast) || []).slice(0, 6).map(c => c.name);
 
       const vids = (d.videos && d.videos.results) || [];
       const trailerVid = vids.find(v => v.site === 'YouTube' && v.type === 'Trailer' && v.official)
@@ -1762,6 +1897,7 @@
         posterUrl: posterUrl,
         altPosterUrls: galleryPosters,
         director: (d.created_by && d.created_by.length) ? d.created_by.map(c => c.name).slice(0, 2).join(', ') : '',
+        cast: cast,
         rating: rating,
         trailerUrl: trailerVid ? `https://www.youtube.com/watch?v=${trailerVid.key}` : '',
         numberOfSeasons: d.number_of_seasons || null,
@@ -1791,6 +1927,7 @@
       draftAltPosters = data.altPosterUrls.slice();
       renderAltPosterThumbs();
     }
+    currentDraftCast = data.cast || [];
   }
 
   async function omdbLookupByTitle(title, year, type){
@@ -1818,10 +1955,12 @@
     $('f_poster').value = poster;
     updateDraftPoster(poster, $('f_title').value);
     $('f_trailer').value = '';
+    currentDraftCast = (omdb && omdb.Actors && omdb.Actors !== 'N/A') ? omdb.Actors.split(',').map(s=>s.trim()).slice(0,6) : [];
     try{
       const t = await tmdbLookupByTitle($('f_title').value, $('f_year').value);
       if (t && t.trailerUrl) $('f_trailer').value = t.trailerUrl;
-    }catch(e){ /* trailer is a bonus, not required */ }
+      if (t && t.cast && t.cast.length) currentDraftCast = t.cast;
+    }catch(e){ /* trailer/cast are bonuses, not required */ }
   }
 
   function cleanTitleForSearch(t){
@@ -2018,6 +2157,7 @@
       barcode: $('f_barcode').value.trim(),
       posterUrl: $('f_poster').value.trim(),
       altPosters: draftAltPosters.slice(),
+      cast: currentDraftCast.slice(),
     };
 
     let isDuplicate = false;
