@@ -331,7 +331,7 @@
       <div class="counter">
         <div>
           <div class="digits" id="countDigits">000</div>
-          <div class="label">Tapes &amp; Discs</div>
+          <div class="label" id="counterLabel">Tapes &amp; Discs</div>
         </div>
       </div>
       <div style="position:relative;">
@@ -806,11 +806,28 @@
     return list;
   }
 
+  function isFilterActive(){
+    return $('searchInput').value.trim() !== ''
+        || $('genreFilter').value !== 'all'
+        || $('tagFilter').value !== 'all'
+        || $('formatFilter').value !== 'all'
+        || $('typeFilter').value !== 'all';
+  }
+
   function render(){
     refreshFilterOptions();
-    $('countDigits').textContent = String(collection.length).padStart(3,'0');
-
     const list = getFiltered();
+
+    if (isFilterActive()){
+      $('countDigits').textContent = String(list.length).padStart(3,'0');
+      $('countDigits').title = `${list.length} of ${collection.length} total`;
+      $('counterLabel').textContent = 'Matching';
+    } else {
+      $('countDigits').textContent = String(collection.length).padStart(3,'0');
+      $('countDigits').title = '';
+      $('counterLabel').textContent = 'Tapes & Discs';
+    }
+
     if (collection.length === 0){
       gridWrap.innerHTML = `<div class="empty"><h3>Archive is empty</h3><p>Scan your first tape or disc to get started.</p></div>`;
       return;
@@ -1368,7 +1385,15 @@
       return;
     }
     html5Qrcode = new Html5Qrcode('reader');
-    const config = buildScanConfig();
+    const baseConfig = buildScanConfig();
+    const richConfig = Object.assign({}, baseConfig, {
+      videoConstraints: {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        advanced: [{ focusMode: 'continuous' }]
+      }
+    });
     const onDecode = (decodedText)=>{
       $('barcodeInput').value = decodedText;
       stopCamera();
@@ -1386,17 +1411,11 @@
     // Try a higher-resolution, continuously-focused feed first — sharper video
     // means faster, more reliable decodes. Some devices reject these extra
     // constraints, so fall back to a plain environment-facing camera if so.
-    html5Qrcode.start(
-      {
-        facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        advanced: [{ focusMode: 'continuous' }]
-      },
-      config, onDecode, onFail
-    ).then(onStarted).catch(()=>{
-      html5Qrcode.start({ facingMode: 'environment' }, config, onDecode, onFail)
-        .then(onStarted)
+    html5Qrcode.start({ facingMode: 'environment' }, richConfig, onDecode, onFail)
+      .then(onStarted)
+      .catch(()=>{
+        html5Qrcode.start({ facingMode: 'environment' }, baseConfig, onDecode, onFail)
+          .then(onStarted)
         .catch(()=>{ $('scanHint').textContent = 'Camera unavailable in this browser — use manual entry below.'; });
     });
   }
