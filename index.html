@@ -867,8 +867,10 @@
       </div>
       ${m.plot ? `<p class="plot">${escapeHtml(m.plot)}</p>` : ''}
       ${trailerId ? `
-        <button class="btn btn-ghost" id="trailerToggleBtn" style="width:100%; margin-bottom:14px;">▶ Watch Trailer</button>
-        <div id="trailerContainer" style="display:none; margin-bottom:14px; border-radius:8px; overflow:hidden; border:1px solid var(--line); position:relative; padding-bottom:56.25%; height:0;"></div>
+        <div style="border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:14px; background:var(--panel);">
+          <button class="btn btn-ghost" id="trailerToggleBtn" style="width:100%; border-radius:0; border:none; border-bottom:1px solid var(--line);">▶ Watch Trailer</button>
+          <div id="trailerContainer" style="display:none; position:relative; padding-bottom:56.25%; height:0;"></div>
+        </div>
       ` : ''}
       <div class="kv">
         ${m.barcode ? `<div class="k">Barcode</div><div>${escapeHtml(m.barcode)}</div>`:''}
