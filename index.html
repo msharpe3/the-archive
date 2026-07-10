@@ -249,17 +249,16 @@
 
   .draft-poster-wrap{ display:flex; gap:14px; margin-bottom:14px; }
   .alt-thumb{ position:relative; width:48px; }
-  .alt-thumb img{ width:48px; height:72px; object-fit:cover; border-radius:4px; border:1px solid var(--line); display:block; background:#0a1f4d; }
+  .alt-thumb img{
+    width:48px; height:72px; object-fit:cover; border-radius:4px; border:1px solid var(--line);
+    display:block; background:#0a1f4d; cursor:pointer; transition:transform .12s ease, border-color .12s ease;
+  }
+  .alt-thumb img:hover{ transform:translateY(-3px); border-color:var(--amber-dim); }
   .alt-thumb .remove-x{
     position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:50%;
     background:var(--pink); color:#fff; font-size:11px; line-height:1; display:flex;
     align-items:center; justify-content:center; cursor:pointer; border:none; padding:0;
   }
-  .alt-swap-thumb{
-    width:46px; height:69px; object-fit:cover; border-radius:4px; border:1px solid var(--line);
-    cursor:pointer; background:#0a1f4d; transition:transform .12s ease, border-color .12s ease;
-  }
-  .alt-swap-thumb:hover{ transform:translateY(-3px); border-color:var(--amber-dim); }
   .draft-poster{ width:90px; aspect-ratio:2/3; object-fit:cover; border-radius:5px; background:#14151f; border:1px solid var(--line); flex-shrink:0;}
   .chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
   .chip{
@@ -940,14 +939,6 @@
         </div>
       </div>
       ${m.season ? `<p style="font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--teal); margin:0 0 12px;">${escapeHtml(m.season)}</p>` : ''}
-      ${(m.altPosters && m.altPosters.length) ? `
-        <div style="margin:0 0 16px;">
-          <div style="font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Alternate Covers — tap to swap</div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            ${m.altPosters.map((url, i) => `<img class="alt-swap-thumb" data-idx="${i}" src="${escapeAttr(url)}" onerror="this.style.opacity='0.3'" />`).join('')}
-          </div>
-        </div>
-      ` : ''}
       ${m.plot ? `<p class="plot">${escapeHtml(m.plot)}</p>` : ''}
       ${trailerId ? `
         <div style="border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:14px; background:var(--panel);">
@@ -984,18 +975,6 @@
     `;
     document.querySelectorAll('.sibling-row').forEach(row=>{
       row.addEventListener('click', ()=> openDetail(row.dataset.id));
-    });
-    document.querySelectorAll('.alt-swap-thumb').forEach(img=>{
-      img.addEventListener('click', ()=>{
-        const idx = parseInt(img.dataset.idx, 10);
-        const oldPrimary = m.posterUrl || '';
-        m.altPosters[idx] = oldPrimary;
-        m.posterUrl = img.src;
-        saveCollection();
-        render();
-        openDetail(m.id, pickBadge);
-        toast('Cover swapped.');
-      });
     });
     if (pickBadge) $('pickAgainBtn').onclick = ()=> pickRandomMovie();
     $('editBtn').onclick = ()=>{ closeDetail(); openEdit(m.id); };
@@ -1250,13 +1229,25 @@
   function renderAltPosterThumbs(){
     $('altPosterThumbs').innerHTML = draftAltPosters.map((url, i) => `
       <div class="alt-thumb">
-        <img src="${escapeAttr(url)}" onerror="this.style.opacity='0.3'" />
+        <img src="${escapeAttr(url)}" data-idx="${i}" title="Tap to make this the cover" onerror="this.style.opacity='0.3'" />
         <button type="button" class="remove-x" data-idx="${i}" title="Remove">×</button>
       </div>`).join('');
     document.querySelectorAll('#altPosterThumbs .remove-x').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         draftAltPosters.splice(parseInt(btn.dataset.idx, 10), 1);
         renderAltPosterThumbs();
+      });
+    });
+    document.querySelectorAll('#altPosterThumbs .alt-thumb img').forEach(img=>{
+      img.addEventListener('click', ()=>{
+        const idx = parseInt(img.dataset.idx, 10);
+        const oldPrimary = $('f_poster').value.trim();
+        const newPrimary = draftAltPosters[idx];
+        draftAltPosters[idx] = oldPrimary;
+        $('f_poster').value = newPrimary;
+        updateDraftPoster(newPrimary, $('f_title').value);
+        renderAltPosterThumbs();
+        toast('Cover swapped — save to keep it.');
       });
     });
   }
