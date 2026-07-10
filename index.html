@@ -341,6 +341,7 @@
           <button class="btn btn-ghost" id="lookupSettingsBtn" style="width:100%; text-align:left;">🔑 Lookup Setup</button>
           <div style="height:1px; background:var(--line); margin:2px 0;"></div>
           <button class="btn btn-ghost" id="statsOpenBtn" style="width:100%; text-align:left;">📊 Collection Stats</button>
+          <button class="btn btn-ghost" id="bulkTrailerBtn" style="width:100%; text-align:left;">🎬 Fetch Missing Trailers</button>
           <button class="btn btn-ghost" id="exportBtn" style="width:100%; text-align:left;">⬇ Export Backup</button>
           <button class="btn btn-ghost" id="importBtn" style="width:100%; text-align:left;">⬆ Import Backup</button>
           <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
@@ -509,6 +510,22 @@
       </div>
 
       <div id="syncStatusBlock" style="margin-top:14px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Trailer Fetch Modal -->
+<div class="overlay" id="bulkTrailerOverlay" style="display:none;">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-head">
+      <h2>Fetching Trailers</h2>
+      <button class="close-x" id="closeBulkTrailer" style="display:none;">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center; padding:34px 20px;">
+      <div class="spinner" id="bulkTrailerSpinner" style="margin:0 auto 18px; width:22px; height:22px;"></div>
+      <div id="bulkTrailerStatus" style="font-size:13px; color:var(--ink); margin-bottom:8px;"></div>
+      <div id="bulkTrailerCount" style="font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted);"></div>
+      <button class="btn btn-primary" id="bulkTrailerDoneBtn" style="width:100%; margin-top:22px; display:none;">Done</button>
     </div>
   </div>
 </div>
@@ -1067,6 +1084,52 @@
   });
   $('closeStats').addEventListener('click', ()=> $('statsOverlay').style.display = 'none');
   $('statsOverlay').addEventListener('click', e=>{ if (e.target.id==='statsOverlay') $('statsOverlay').style.display='none'; });
+
+  // ---------------- Bulk trailer fetch ----------------
+  async function runBulkTrailerFetch(){
+    $('settingsMenu').style.display = 'none';
+    if (!getTmdbKey()){
+      toast('Add a TMDB key under 🔑 Lookup Setup first.');
+      return;
+    }
+    const targets = collection.filter(m => !m.trailer);
+    if (!targets.length){
+      toast('Every movie already has a trailer link (or your archive is empty).');
+      return;
+    }
+
+    $('bulkTrailerOverlay').style.display = 'flex';
+    $('bulkTrailerSpinner').style.display = 'block';
+    $('bulkTrailerDoneBtn').style.display = 'none';
+    $('closeBulkTrailer').style.display = 'none';
+
+    let found = 0;
+    for (let i = 0; i < targets.length; i++){
+      const m = targets[i];
+      $('bulkTrailerStatus').textContent = `Checking "${m.title}"…`;
+      $('bulkTrailerCount').textContent = `${i + 1} of ${targets.length}`;
+      try{
+        const data = await tmdbLookupByTitle(m.title, m.year);
+        if (data && data.trailerUrl){
+          m.trailer = data.trailerUrl;
+          found++;
+        }
+      }catch(e){ /* skip this one, keep going */ }
+      await new Promise(r => setTimeout(r, 300)); // stay gentle with the free API quota
+    }
+
+    await saveCollection();
+    render();
+
+    $('bulkTrailerSpinner').style.display = 'none';
+    $('bulkTrailerStatus').textContent = `Done — added trailers to ${found} of ${targets.length} movies.`;
+    $('bulkTrailerCount').textContent = '';
+    $('bulkTrailerDoneBtn').style.display = 'block';
+    $('closeBulkTrailer').style.display = 'inline-block';
+  }
+  $('bulkTrailerBtn').addEventListener('click', runBulkTrailerFetch);
+  $('bulkTrailerDoneBtn').addEventListener('click', ()=> $('bulkTrailerOverlay').style.display = 'none');
+  $('closeBulkTrailer').addEventListener('click', ()=> $('bulkTrailerOverlay').style.display = 'none');
 
   $('closeDetail').onclick = closeDetail;
   $('detailOverlay').addEventListener('click', e=>{ if (e.target.id==='detailOverlay') closeDetail(); });
