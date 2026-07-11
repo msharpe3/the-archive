@@ -437,6 +437,7 @@
           <input id="titleLookupInput" placeholder="Movie title (optional lookup)" />
           <button class="btn btn-ghost" id="titleLookupBtn">Fetch Info</button>
         </div>
+        <div id="titleLookupResults" style="margin-top:8px;"></div>
         <div class="scan-hint" style="text-align:left; padding-left:0;">Or just fill in the details below yourself — no lookup required.</div>
       </div>
 
@@ -1460,6 +1461,7 @@
         .filter(r => r.media_type === 'movie' || r.media_type === 'tv')
         .slice(0, 8)
         .map(r => ({
+          id: r.id,
           title: r.title || r.name || '',
           year: (r.release_date || r.first_air_date || '').slice(0, 4),
           posterUrl: r.poster_path ? `https://image.tmdb.org/t/p/w200${r.poster_path}` : '',
@@ -1478,6 +1480,7 @@
       const data = await res.json();
       if (data.Response === 'False') return [];
       return (data.Search || []).slice(0, 8).map(r => ({
+        imdbID: r.imdbID,
         title: r.Title,
         year: (r.Year || '').slice(0, 4),
         posterUrl: (r.Poster && r.Poster !== 'N/A') ? r.Poster : '',
@@ -1633,6 +1636,7 @@
     $('barcodeInput').value = '';
     $('titleLookupInput').value = '';
     $('lookupStatus').innerHTML = '';
+    $('titleLookupResults').innerHTML = '';
     hideResultPane();
     switchTab('scan');
   }
@@ -1898,18 +1902,11 @@
   function getTmdbKey(){ return localStorage.getItem(TMDB_KEY_STORAGE) || ''; }
   function setTmdbKey(k){ localStorage.setItem(TMDB_KEY_STORAGE, k); }
 
-  async function tmdbLookupByTitle(title, year){
+  async function tmdbGetMovieDetailsById(id){
     const key = getTmdbKey();
-    if (!key || !title) return null;
+    if (!key || !id) return null;
     try{
-      let searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(title)}`;
-      if (year) searchUrl += `&year=${encodeURIComponent(year)}`;
-      const searchRes = await fetch(searchUrl);
-      const searchData = await searchRes.json();
-      const movie = searchData.results && searchData.results[0];
-      if (!movie) return null;
-
-      const detailsRes = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${encodeURIComponent(key)}&append_to_response=credits,release_dates,videos,images&include_image_language=en,null`);
+      const detailsRes = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${encodeURIComponent(key)}&append_to_response=credits,release_dates,videos,images&include_image_language=en,null`);
       const d = await detailsRes.json();
 
       const director = ((d.credits && d.credits.crew) || []).find(c => c.job === 'Director');
@@ -1934,7 +1931,7 @@
         .slice(0, 5);
 
       return {
-        title: d.title || title,
+        title: d.title || '',
         year: (d.release_date || '').slice(0, 4),
         plot: d.overview || '',
         genres: (d.genres || []).map(g => g.name).slice(0, 3),
@@ -1951,18 +1948,29 @@
     }
   }
 
-  async function tmdbLookupTvByTitle(title, year){
+  async function tmdbLookupByTitle(title, year){
     const key = getTmdbKey();
     if (!key || !title) return null;
     try{
-      let searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(title)}`;
-      if (year) searchUrl += `&first_air_date_year=${encodeURIComponent(year)}`;
+      let searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(title)}`;
+      if (year) searchUrl += `&year=${encodeURIComponent(year)}`;
       const searchRes = await fetch(searchUrl);
       const searchData = await searchRes.json();
-      const show = searchData.results && searchData.results[0];
-      if (!show) return null;
+      const movie = searchData.results && searchData.results[0];
+      if (!movie) return null;
+      const details = await tmdbGetMovieDetailsById(movie.id);
+      if (details && !details.title) details.title = title;
+      return details;
+    }catch(e){
+      return null;
+    }
+  }
 
-      const detailsRes = await fetch(`https://api.themoviedb.org/3/tv/${show.id}?api_key=${encodeURIComponent(key)}&append_to_response=content_ratings,videos,images,credits&include_image_language=en,null`);
+  async function tmdbGetTvDetailsById(id){
+    const key = getTmdbKey();
+    if (!key || !id) return null;
+    try{
+      const detailsRes = await fetch(`https://api.themoviedb.org/3/tv/${id}?api_key=${encodeURIComponent(key)}&append_to_response=content_ratings,videos,images,credits&include_image_language=en,null`);
       const d = await detailsRes.json();
 
       const usRating = ((d.content_ratings && d.content_ratings.results) || []).find(r => r.iso_3166_1 === 'US');
@@ -1981,7 +1989,7 @@
         .slice(0, 5);
 
       return {
-        title: d.name || title,
+        title: d.name || '',
         year: (d.first_air_date || '').slice(0, 4),
         plot: d.overview || '',
         genres: (d.genres || []).map(g => g.name).slice(0, 3),
@@ -1994,6 +2002,24 @@
         trailerUrl: trailerVid ? `https://www.youtube.com/watch?v=${trailerVid.key}` : '',
         numberOfSeasons: d.number_of_seasons || null,
       };
+    }catch(e){
+      return null;
+    }
+  }
+
+  async function tmdbLookupTvByTitle(title, year){
+    const key = getTmdbKey();
+    if (!key || !title) return null;
+    try{
+      let searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(title)}`;
+      if (year) searchUrl += `&first_air_date_year=${encodeURIComponent(year)}`;
+      const searchRes = await fetch(searchUrl);
+      const searchData = await searchRes.json();
+      const show = searchData.results && searchData.results[0];
+      if (!show) return null;
+      const details = await tmdbGetTvDetailsById(show.id);
+      if (details && !details.title) details.title = title;
+      return details;
     }catch(e){
       return null;
     }
@@ -2032,6 +2058,19 @@
     const data = await res.json();
     if (data.Response === 'False') return null;
     return data;
+  }
+
+  async function omdbLookupById(imdbID){
+    const key = getOmdbKey();
+    if (!key || !imdbID) return null;
+    try{
+      const res = await fetch(`https://www.omdbapi.com/?apikey=${encodeURIComponent(key)}&i=${encodeURIComponent(imdbID)}`);
+      const data = await res.json();
+      if (data.Response === 'False') return null;
+      return data;
+    }catch(e){
+      return null;
+    }
   }
 
   async function fillDraftFromOmdb(omdb, fallbackTitle, fallbackPoster, fallbackFormat){
@@ -2196,35 +2235,76 @@
     setStatus(`<div class="status-line" style="color:var(--pink);">${msg}</div>`);
   }
 
+  async function selectTitleLookupResult(r){
+    $('titleLookupResults').innerHTML = '';
+    setStatus(`<div class="status-line"><span class="spinner"></span> Loading details for "${escapeHtml(r.title)}"…</div>`);
+    setMediaType(r.mediaType || 'movie');
+    try{
+      if (r.id){
+        const details = r.mediaType === 'tv' ? await tmdbGetTvDetailsById(r.id) : await tmdbGetMovieDetailsById(r.id);
+        if (details){
+          await fillDraftFromTmdb(details, r.title, r.posterUrl, null);
+          setStatus(`<div class="status-line" style="color:var(--teal);">Loaded — double-check the details below before saving.</div>`);
+          return;
+        }
+      } else if (r.imdbID){
+        const omdb = await omdbLookupById(r.imdbID);
+        if (omdb){
+          await fillDraftFromOmdb(omdb, r.title, r.posterUrl);
+          setStatus(`<div class="status-line" style="color:var(--teal);">Loaded — double-check the details below before saving.</div>`);
+          return;
+        }
+      }
+      $('f_title').value = r.title;
+      $('f_year').value = r.year || '';
+      $('f_poster').value = r.posterUrl || '';
+      updateDraftPoster(r.posterUrl, r.title);
+      setStatus(`<div class="status-line" style="color:var(--pink);">Got the basics, but couldn't load full details — fill in the rest below.</div>`);
+    }catch(e){
+      setStatus(`<div class="status-line" style="color:var(--pink);">Something went wrong loading details — fill in the rest below.</div>`);
+    }
+  }
+
+  function renderTitleLookupResults(results, fallbackQuery){
+    if (!results || !results.length){
+      $('titleLookupResults').innerHTML = '';
+      setStatus(`<div class="status-line" style="color:var(--pink);">No matches found. Fill in the details manually below.</div>`);
+      return;
+    }
+    setStatus('');
+    $('titleLookupResults').innerHTML = results.map((r, i) => `
+      <div class="wishlist-result" data-idx="${i}" style="display:flex; align-items:center; gap:10px; padding:6px; margin-bottom:6px; border:1px solid var(--line); border-radius:5px; cursor:pointer; background:#0a1f4d;">
+        ${r.posterUrl
+          ? `<img src="${escapeAttr(r.posterUrl)}" style="width:32px; height:48px; object-fit:cover; border-radius:3px; flex-shrink:0;" onerror="this.style.opacity='0.3'" />`
+          : `<div style="width:32px; height:48px; border-radius:3px; background:#132a75; flex-shrink:0;"></div>`}
+        <div style="flex:1; font-size:12.5px; color:var(--ink);">
+          ${escapeHtml(r.title)} ${r.year ? `<span style="color:var(--muted);">(${escapeHtml(r.year)})</span>` : ''}
+          ${r.mediaType === 'tv' ? `<span class="badge fmt" style="margin-left:6px;">TV</span>` : ''}
+        </div>
+        <span style="color:var(--amber); font-size:11px; font-family:'IBM Plex Mono', monospace; flex-shrink:0;">Select</span>
+      </div>`).join('');
+    document.querySelectorAll('#titleLookupResults .wishlist-result').forEach(row=>{
+      row.addEventListener('click', ()=> selectTitleLookupResult(results[parseInt(row.dataset.idx, 10)]));
+    });
+  }
+
   async function lookupByTitle(title){
     if (!getOmdbKey() && !getTmdbKey()){
       setStatus(`<div class="status-line" style="color:var(--pink);">Add a free movie database key under 🔑 Lookup Setup first.</div>`);
       return;
     }
     setStatus(`<div class="status-line"><span class="spinner"></span> Searching for "${escapeHtml(title)}"…</div>`);
-    const isTv = currentMediaType === 'tv';
+    $('titleLookupResults').innerHTML = '';
     try{
-      if (getTmdbKey()){
-        const tmdb = isTv ? await tmdbLookupTvByTitle(title) : await tmdbLookupByTitle(title);
-        if (tmdb){
-          fillDraftFromTmdb(tmdb, title);
-          setStatus(`<div class="status-line" style="color:var(--teal);">Found it — double-check the details below before saving.</div>`);
-          return;
-        }
+      let results = await searchTmdbMulti(title);
+      if (!results) results = await searchOmdbMulti(title);
+      if (!results){
+        setStatus(`<div class="status-line" style="color:var(--pink);">No movie database key is set. Fill in the details manually below.</div>`);
+        return;
       }
-      if (getOmdbKey()){
-        const omdb = await omdbLookupByTitle(title, null, isTv ? 'series' : 'movie');
-        if (omdb){
-          await fillDraftFromOmdb(omdb, title);
-          setStatus(`<div class="status-line" style="color:var(--teal);">Found it — double-check the details below before saving.</div>`);
-        } else {
-          setStatus(`<div class="status-line" style="color:var(--pink);">No match found. Fill in the details manually below.</div>`);
-        }
-      } else {
-        setStatus(`<div class="status-line" style="color:var(--pink);">No match found. Fill in the details manually below.</div>`);
-      }
+      renderTitleLookupResults(results, title);
     }catch(e){
-      setStatus(`<div class="status-line" style="color:var(--pink);">Lookup failed. Fill in the details manually below.</div>`);
+      setStatus(`<div class="status-line" style="color:var(--pink);">Search failed. Fill in the details manually below.</div>`);
     }
   }
 
