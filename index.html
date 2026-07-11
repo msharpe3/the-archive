@@ -183,6 +183,10 @@
   }
   .badge.fmt{ background:#2fd0e02a; color:var(--teal); border:1px solid #2fd0e055;}
   .badge.rate{ background:#ffd40022; color:var(--amber); border:1px solid #ffd40066;}
+  .star-rating{ display:flex; gap:6px; }
+  .star-rating .star{ font-size:28px; line-height:1; cursor:pointer; color:var(--line); transition:color .1s ease, transform .1s ease; user-select:none; }
+  .star-rating .star.filled{ color:var(--amber); }
+  .star-rating .star:hover{ transform:scale(1.15); }
 
   .empty{
     text-align:center; padding:70px 20px; color:var(--muted);
@@ -346,14 +350,14 @@
         </div>
       </div>
       <div style="position:relative;">
-        <button class="btn btn-ghost" id="settingsMenuBtn" title="Sync & Lookup Setup" style="padding:10px 12px; font-size:16px;">📽️</button>
+        <button class="btn btn-ghost" id="settingsMenuBtn" title="Sync & Lookup Setup" style="padding:10px 12px; font-size:16px;">📼</button>
         <div id="settingsMenu" style="display:none; position:absolute; right:0; top:calc(100% + 8px); background:var(--panel); border:1px solid var(--line); border-radius:6px; box-shadow:var(--shadow); padding:8px; flex-direction:column; gap:6px; min-width:190px; z-index:10;">
-          <button class="btn btn-ghost" id="syncOpenBtn" style="width:100%; text-align:left;">🎞️ Sync Devices</button>
-          <button class="btn btn-ghost" id="lookupSettingsBtn" style="width:100%; text-align:left;">🎥 Lookup Setup</button>
-          <button class="btn btn-ghost" id="wishlistOpenBtn" style="width:100%; text-align:left;"> 📼 The Search</button>
+          <button class="btn btn-ghost" id="syncOpenBtn" style="width:100%; text-align:left;">🔄 Sync Devices</button>
+          <button class="btn btn-ghost" id="lookupSettingsBtn" style="width:100%; text-align:left;">🔑 Lookup Setup</button>
+          <button class="btn btn-ghost" id="wishlistOpenBtn" style="width:100%; text-align:left;">⭐ Wishlist</button>
           <div style="height:1px; background:var(--line); margin:2px 0;"></div>
-          <button class="btn btn-ghost" id="statsOpenBtn" style="width:100%; text-align:left;">🎬 Collection Stats</button>
-          <button class="btn btn-ghost" id="bulkTrailerBtn" style="width:100%; text-align:left;">🍿 Fetch Missing Trailers</button>
+          <button class="btn btn-ghost" id="statsOpenBtn" style="width:100%; text-align:left;">📊 Collection Stats</button>
+          <button class="btn btn-ghost" id="bulkTrailerBtn" style="width:100%; text-align:left;">🎬 Fetch Missing Trailers</button>
           <button class="btn btn-ghost" id="bulkCoversBtn" style="width:100%; text-align:left;">🖼️ Fetch Alternate Covers</button>
           <button class="btn btn-ghost" id="bulkTagsBtn" style="width:100%; text-align:left;">🏷️ Suggest Tags</button>
           <button class="btn btn-ghost" id="exportBtn" style="width:100%; text-align:left;">⬇ Export Backup</button>
@@ -386,6 +390,7 @@
       <option value="titleAsc">Title A–Z</option>
       <option value="yearDesc">Year (Newest)</option>
       <option value="yearAsc">Year (Oldest)</option>
+      <option value="myRatingDesc">My Rating (Highest)</option>
     </select>
     <button class="btn btn-primary" id="randomPickBtn">🎲 Pick For Me</button>
   </div>
@@ -596,13 +601,13 @@
     </div>
     <div class="modal-body">
       <p class="scan-hint" style="text-align:left; padding-left:0;">
-        Titles you don't own yet — separate from your real archive. Handy for browsing thrift stores or remembering what to look for.
+        Titles you don't own yet — separate from your real archive. Search, browse the matches, and tap the right one to add it.
       </p>
       <div class="lookup-row">
         <input id="wishlistTitleInput" placeholder="Movie or show title" />
-        <button class="btn btn-primary" id="wishlistAddBtn">Add</button>
+        <button class="btn btn-primary" id="wishlistAddBtn">Search</button>
       </div>
-      <div id="wishlistStatus" style="margin:8px 0;"></div>
+      <div id="wishlistSearchResults" style="margin:8px 0;"></div>
       <div class="divider">on your list</div>
       <div id="wishlistBody"></div>
     </div>
@@ -877,6 +882,7 @@
       if (sortBy === 'titleAsc') return a.title.localeCompare(b.title);
       if (sortBy === 'yearDesc') return (parseInt(b.year)||0) - (parseInt(a.year)||0);
       if (sortBy === 'yearAsc') return (parseInt(a.year)||0) - (parseInt(b.year)||0);
+      if (sortBy === 'myRatingDesc') return (b.myRating||0) - (a.myRating||0);
       return (b.dateAdded||0) - (a.dateAdded||0);
     });
     return list;
@@ -960,6 +966,7 @@
             ${m.mediaType === 'tv' ? `<span class="badge fmt">📺 TV</span>` : ''}
             <span class="badge fmt">${escapeHtml(m.format||'DVD')}</span>
             ${m.rating ? `<span class="badge rate">${escapeHtml(m.rating)}</span>` : ''}
+            ${m.myRating ? `<span class="badge rate">★ ${m.myRating}</span>` : ''}
             ${siblingCount > 0 ? `<span class="badge rate" title="You own ${siblingCount + 1} copies of this title">🎞️ ×${siblingCount + 1}</span>` : ''}
           </div>
         </div>
@@ -1008,6 +1015,12 @@
         ${m.watched ? `<div class="k">Watched</div><div>${m.lastWatched ? new Date(m.lastWatched).toLocaleDateString() : 'Yes'}</div>` : ''}
       </div>
       <div style="margin:14px 0;">
+        <div style="font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">My Rating</div>
+        <div class="star-rating" id="myRatingStars">
+          ${[1,2,3,4,5].map(i => `<span class="star${(m.myRating||0) >= i ? ' filled' : ''}" data-val="${i}">★</span>`).join('')}
+        </div>
+      </div>
+      <div style="margin:14px 0;">
         ${m.watched
           ? `<button class="btn btn-ghost" id="toggleWatchedBtn" style="width:100%;">Mark as Unwatched</button>`
           : `<button class="btn btn-primary" id="toggleWatchedBtn" style="width:100%;">👁 Mark as Watched</button>`}
@@ -1047,6 +1060,14 @@
         }
       };
     }
+    document.querySelectorAll('#myRatingStars .star').forEach(star=>{
+      star.addEventListener('click', ()=>{
+        const val = parseInt(star.dataset.val, 10);
+        m.myRating = (m.myRating === val) ? 0 : val; // clicking the same star again clears it
+        saveCollection(); render();
+        openDetail(m.id, pickBadge);
+      });
+    });
     $('toggleWatchedBtn').onclick = ()=>{
       m.watched = !m.watched;
       m.lastWatched = m.watched ? Date.now() : null;
@@ -1402,33 +1423,97 @@
     });
   }
 
-  async function addToWishlist(title){
+  async function addResultToWishlist(r){
+    const item = {
+      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random())),
+      title: r.title, year: r.year || '', posterUrl: r.posterUrl || '', mediaType: r.mediaType || 'movie', dateAdded: Date.now()
+    };
+    wishlist.push(item);
+    await saveCollection();
+    renderWishlist();
+    $('wishlistSearchResults').innerHTML = '';
+    $('wishlistTitleInput').value = '';
+    toast(`Added "${item.title}" to your wishlist.`);
+  }
+
+  // Blind add — used only as a last resort when no search results are available (no keys, or a genuine miss).
+  async function addTitleOnlyToWishlist(title){
     const item = {
       id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random())),
       title, year: '', posterUrl: '', mediaType: 'movie', dateAdded: Date.now()
     };
     wishlist.push(item);
+    await saveCollection();
     renderWishlist();
-    saveCollection();
+    $('wishlistSearchResults').innerHTML = '';
+    $('wishlistTitleInput').value = '';
+    toast(`Added "${title}" to your wishlist.`);
+  }
 
-    // Best-effort background lookup for a poster/year — doesn't block adding the title.
+  async function searchTmdbMulti(query){
+    const key = getTmdbKey();
+    if (!key) return null;
     try{
-      let data = null;
-      if (getTmdbKey()) data = await tmdbLookupByTitle(title);
-      if (!data && getOmdbKey()){
-        const omdb = await omdbLookupByTitle(title);
-        if (omdb) data = { year: (omdb.Year || '').slice(0, 4), posterUrl: (omdb.Poster && omdb.Poster !== 'N/A') ? omdb.Poster : '' };
-      }
-      if (data){
-        const idx = wishlist.findIndex(w => w.id === item.id);
-        if (idx > -1){
-          wishlist[idx].year = data.year || '';
-          wishlist[idx].posterUrl = data.posterUrl || '';
-          renderWishlist();
-          saveCollection();
-        }
-      }
-    }catch(e){ /* title-only entry is still useful without a poster */ }
+      const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      return (data.results || [])
+        .filter(r => r.media_type === 'movie' || r.media_type === 'tv')
+        .slice(0, 8)
+        .map(r => ({
+          title: r.title || r.name || '',
+          year: (r.release_date || r.first_air_date || '').slice(0, 4),
+          posterUrl: r.poster_path ? `https://image.tmdb.org/t/p/w200${r.poster_path}` : '',
+          mediaType: r.media_type === 'tv' ? 'tv' : 'movie',
+        }));
+    }catch(e){
+      return null;
+    }
+  }
+
+  async function searchOmdbMulti(query){
+    const key = getOmdbKey();
+    if (!key) return null;
+    try{
+      const res = await fetch(`https://www.omdbapi.com/?apikey=${encodeURIComponent(key)}&s=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data.Response === 'False') return [];
+      return (data.Search || []).slice(0, 8).map(r => ({
+        title: r.Title,
+        year: (r.Year || '').slice(0, 4),
+        posterUrl: (r.Poster && r.Poster !== 'N/A') ? r.Poster : '',
+        mediaType: r.Type === 'series' ? 'tv' : 'movie',
+      }));
+    }catch(e){
+      return null;
+    }
+  }
+
+  function renderWishlistSearchResults(results, fallbackQuery){
+    if (!results || !results.length){
+      $('wishlistSearchResults').innerHTML = `
+        <p style="text-align:center; color:var(--muted); font-size:12.5px; padding:8px 0;">No matches found.</p>
+        <button type="button" class="btn btn-ghost" id="wishlistBlindAddBtn" style="width:100%;">Add "${escapeHtml(fallbackQuery)}" anyway</button>
+      `;
+      $('wishlistBlindAddBtn').addEventListener('click', ()=> addTitleOnlyToWishlist(fallbackQuery));
+      return;
+    }
+    $('wishlistSearchResults').innerHTML = results.map((r, i) => `
+      <div class="wishlist-result" data-idx="${i}" style="display:flex; align-items:center; gap:10px; padding:6px; margin-bottom:6px; border:1px solid var(--line); border-radius:5px; cursor:pointer; background:#0a1f4d;">
+        ${r.posterUrl
+          ? `<img src="${escapeAttr(r.posterUrl)}" style="width:32px; height:48px; object-fit:cover; border-radius:3px; flex-shrink:0;" onerror="this.style.opacity='0.3'" />`
+          : `<div style="width:32px; height:48px; border-radius:3px; background:#132a75; flex-shrink:0;"></div>`}
+        <div style="flex:1; font-size:12.5px; color:var(--ink);">
+          ${escapeHtml(r.title)} ${r.year ? `<span style="color:var(--muted);">(${escapeHtml(r.year)})</span>` : ''}
+          ${r.mediaType === 'tv' ? `<span class="badge fmt" style="margin-left:6px;">TV</span>` : ''}
+        </div>
+        <span style="color:var(--amber); font-size:11px; font-family:'IBM Plex Mono', monospace; flex-shrink:0;">+ Add</span>
+      </div>`).join('') + `
+      <button type="button" class="btn btn-ghost" id="wishlistBlindAddBtn" style="width:100%; margin-top:2px;">None of these — add "${escapeHtml(fallbackQuery)}" as typed</button>
+    `;
+    document.querySelectorAll('.wishlist-result').forEach(row=>{
+      row.addEventListener('click', ()=> addResultToWishlist(results[parseInt(row.dataset.idx, 10)]));
+    });
+    $('wishlistBlindAddBtn').addEventListener('click', ()=> addTitleOnlyToWishlist(fallbackQuery));
   }
 
   function promoteWishlistItem(id){
@@ -1449,17 +1534,24 @@
 
   $('wishlistOpenBtn').addEventListener('click', ()=>{
     $('settingsMenu').style.display = 'none';
+    $('wishlistSearchResults').innerHTML = '';
     renderWishlist();
     $('wishlistOverlay').style.display = 'flex';
   });
   $('closeWishlist').addEventListener('click', ()=> $('wishlistOverlay').style.display = 'none');
   $('wishlistOverlay').addEventListener('click', e=>{ if (e.target.id==='wishlistOverlay') $('wishlistOverlay').style.display='none'; });
-  $('wishlistAddBtn').addEventListener('click', ()=>{
-    const title = $('wishlistTitleInput').value.trim();
-    if (!title){ toast('Type a title first.'); return; }
-    addToWishlist(title);
-    $('wishlistTitleInput').value = '';
-    toast('Added to wishlist.');
+  $('wishlistAddBtn').addEventListener('click', async ()=>{
+    const query = $('wishlistTitleInput').value.trim();
+    if (!query){ toast('Type a title first.'); return; }
+    $('wishlistSearchResults').innerHTML = `<div class="status-line"><span class="spinner"></span> Searching…</div>`;
+    let results = await searchTmdbMulti(query);
+    if (!results) results = await searchOmdbMulti(query);
+    if (!results){
+      // No keys set at all — just add the typed title directly.
+      addTitleOnlyToWishlist(query);
+      return;
+    }
+    renderWishlistSearchResults(results, query);
   });
 
   $('closeDetail').onclick = closeDetail;
