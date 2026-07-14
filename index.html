@@ -110,9 +110,10 @@
 
   /* ---------- Controls ---------- */
   .controls{
-    display:flex; flex-wrap:wrap; gap:10px; align-items:center;
-    margin-bottom:18px;
+    display:flex; flex-wrap:nowrap; gap:10px; align-items:center;
+    margin-bottom:18px; overflow-x:auto; padding-bottom:4px;
   }
+  .controls > *{ flex-shrink:0; }
   .btn{
     font-family:'IBM Plex Sans', sans-serif;
     font-weight:600; font-size:13.5px;
@@ -129,7 +130,7 @@
   .btn-danger:hover{ background:#e6394618; }
 
   .search{
-    flex:1; min-width:180px;
+    flex:1 1 150px; min-width:130px;
     background:var(--panel); border:1px solid var(--line); border-radius:5px;
     padding:10px 12px; color:var(--ink); font-family:'IBM Plex Sans';
     font-size:13.5px;
