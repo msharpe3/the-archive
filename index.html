@@ -36,6 +36,17 @@
   }
   ::selection{ background:var(--amber); color:#0c1f5c; }
 
+  /* Themed scrollbars — blends the browser chrome into the app's palette */
+  *{
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) var(--bg);
+  }
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-track{ background:var(--bg); }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:6px; border:2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover{ background:var(--amber-dim); }
+  ::-webkit-scrollbar-corner{ background:var(--bg); }
+
   .wrap{ max-width:1180px; margin:0 auto; padding:22px 20px 80px; }
 
   body::before{
