@@ -361,6 +361,7 @@
           <button class="btn btn-ghost" id="bulkTrailerBtn" style="width:100%; text-align:left;">🎬 Fetch Missing Trailers</button>
           <button class="btn btn-ghost" id="bulkCoversBtn" style="width:100%; text-align:left;">🖼️ Fetch Alternate Covers</button>
           <button class="btn btn-ghost" id="bulkTagsBtn" style="width:100%; text-align:left;">🏷️ Suggest Tags</button>
+          <button class="btn btn-ghost" id="bulkBackfillBtn" style="width:100%; text-align:left;">🔗 Backfill Recommendations</button>
           <button class="btn btn-ghost" id="exportBtn" style="width:100%; text-align:left;">⬇ Export Backup</button>
           <button class="btn btn-ghost" id="importBtn" style="width:100%; text-align:left;">⬆ Import Backup</button>
           <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
@@ -574,6 +575,22 @@
       <div id="bulkTrailerStatus" style="font-size:13px; color:var(--ink); margin-bottom:8px;"></div>
       <div id="bulkTrailerCount" style="font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted);"></div>
       <button class="btn btn-primary" id="bulkTrailerDoneBtn" style="width:100%; margin-top:22px; display:none;">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Backfill TMDB ID Modal -->
+<div class="overlay" id="bulkBackfillOverlay" style="display:none;">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-head">
+      <h2>Linking to TMDB</h2>
+      <button class="close-x" id="closeBulkBackfill" style="display:none;">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center; padding:34px 20px;">
+      <div class="spinner" id="bulkBackfillSpinner" style="margin:0 auto 18px; width:22px; height:22px;"></div>
+      <div id="bulkBackfillStatus" style="font-size:13px; color:var(--ink); margin-bottom:8px;"></div>
+      <div id="bulkBackfillCount" style="font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted);"></div>
+      <button class="btn btn-primary" id="bulkBackfillDoneBtn" style="width:100%; margin-top:22px; display:none;">Done</button>
     </div>
   </div>
 </div>
@@ -1371,6 +1388,54 @@
   $('bulkCoversDoneBtn').addEventListener('click', ()=> $('bulkCoversOverlay').style.display = 'none');
   $('closeBulkCovers').addEventListener('click', ()=> $('bulkCoversOverlay').style.display = 'none');
 
+  // ---------------- Backfill TMDB IDs (lights up "You might also like" for older entries) ----------------
+  async function runBulkBackfill(){
+    $('settingsMenu').style.display = 'none';
+    if (!getTmdbKey()){
+      toast('Add a TMDB key under 🔑 Lookup Setup first.');
+      return;
+    }
+    const targets = collection.filter(m => !m.tmdbId);
+    if (!targets.length){
+      toast('Every title is already linked (or your archive is empty).');
+      return;
+    }
+
+    $('bulkBackfillOverlay').style.display = 'flex';
+    $('bulkBackfillSpinner').style.display = 'block';
+    $('bulkBackfillDoneBtn').style.display = 'none';
+    $('closeBulkBackfill').style.display = 'none';
+
+    let found = 0;
+    for (let i = 0; i < targets.length; i++){
+      const m = targets[i];
+      $('bulkBackfillStatus').textContent = `Checking "${m.title}"…`;
+      $('bulkBackfillCount').textContent = `${i + 1} of ${targets.length}`;
+      try{
+        const id = m.mediaType === 'tv'
+          ? await tmdbSearchTvId(m.title, m.year)
+          : await tmdbSearchMovieId(m.title, m.year);
+        if (id){
+          m.tmdbId = id;
+          found++;
+        }
+      }catch(e){ /* skip this one, keep going */ }
+      await new Promise(r => setTimeout(r, 300)); // stay gentle with the free API quota
+    }
+
+    await saveCollection();
+    render();
+
+    $('bulkBackfillSpinner').style.display = 'none';
+    $('bulkBackfillStatus').textContent = `Done — linked ${found} of ${targets.length} titles. Recommendations will show up for those now.`;
+    $('bulkBackfillCount').textContent = '';
+    $('bulkBackfillDoneBtn').style.display = 'block';
+    $('closeBulkBackfill').style.display = 'inline-block';
+  }
+  $('bulkBackfillBtn').addEventListener('click', runBulkBackfill);
+  $('bulkBackfillDoneBtn').addEventListener('click', ()=> $('bulkBackfillOverlay').style.display = 'none');
+  $('closeBulkBackfill').addEventListener('click', ()=> $('bulkBackfillOverlay').style.display = 'none');
+
   // ---------------- Suggest tags (rule-based, no network needed) ----------------
   const GENRE_MOOD_MAP = {
     'Comedy': 'Feel Good',
@@ -2001,6 +2066,37 @@
       const details = await tmdbGetMovieDetailsById(movie.id);
       if (details && !details.title) details.title = title;
       return details;
+    }catch(e){
+      return null;
+    }
+  }
+
+  // Lightweight — just the ID, no full details. Used by the backfill tool so it
+  // stays quick and doesn't burn extra API calls fetching data we won't use.
+  async function tmdbSearchMovieId(title, year){
+    const key = getTmdbKey();
+    if (!key || !title) return null;
+    try{
+      let url = `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(title)}`;
+      if (year) url += `&year=${encodeURIComponent(year)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const m = data.results && data.results[0];
+      return m ? m.id : null;
+    }catch(e){
+      return null;
+    }
+  }
+  async function tmdbSearchTvId(title, year){
+    const key = getTmdbKey();
+    if (!key || !title) return null;
+    try{
+      let url = `https://api.themoviedb.org/3/search/tv?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(title)}`;
+      if (year) url += `&first_air_date_year=${encodeURIComponent(year)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const m = data.results && data.results[0];
+      return m ? m.id : null;
     }catch(e){
       return null;
     }
