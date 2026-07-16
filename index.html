@@ -310,6 +310,16 @@
   .stat-big .num{ font-family:'Anton', sans-serif; font-size:32px; color:var(--amber); line-height:1; }
   .stat-big .lbl{ font-family:'IBM Plex Mono', monospace; font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
 
+  .achv-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(130px,1fr)); gap:12px; }
+  .achv-card{
+    text-align:center; padding:14px 8px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel);
+  }
+  .achv-card.locked{ opacity:.35; filter:grayscale(1); }
+  .achv-icon{ font-size:30px; margin-bottom:6px; }
+  .achv-name{ font-family:'Anton', sans-serif; font-size:13px; letter-spacing:.5px; color:var(--ink); margin-bottom:3px; }
+  .achv-desc{ font-size:10.5px; color:var(--muted); line-height:1.3; }
+
   .watched-badge{
     position:absolute; top:10px; right:8px; z-index:2;
     width:22px; height:22px; border-radius:50%;
@@ -374,6 +384,8 @@
           <button class="btn btn-ghost" id="bulkCoversBtn" style="width:100%; text-align:left;">🍿 Fetch Alternate Covers</button>
           <button class="btn btn-ghost" id="bulkTagsBtn" style="width:100%; text-align:left;">🏷️ Suggest Tags</button>
           <button class="btn btn-ghost" id="bulkBackfillBtn" style="width:100%; text-align:left;">🔗 Backfill Recommendations</button>
+          <button class="btn btn-ghost" id="achievementsOpenBtn" style="width:100%; text-align:left;">🏆 Achievements</button>
+          <button class="btn btn-ghost" id="themeOpenBtn" style="width:100%; text-align:left;">🎨 Theme</button>
           <button class="btn btn-ghost" id="exportBtn" style="width:100%; text-align:left;">⬇ Export Backup</button>
           <button class="btn btn-ghost" id="importBtn" style="width:100%; text-align:left;">⬆ Import Backup</button>
           <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
@@ -382,6 +394,12 @@
     </div>
   </header>
 
+  <div class="tabs" id="pageTabs" style="max-width:280px; margin-bottom:18px;">
+    <div class="tab active" data-page="archive">🎬 Archive</div>
+    <div class="tab" data-page="wishlist">⭐ Wishlist</div>
+  </div>
+
+  <div id="archiveView">
   <div class="controls">
     <button class="btn btn-primary" id="openAddBtn">+ Add Title</button>
     <input class="search" id="searchInput" placeholder="Search title, director, or cast…" />
@@ -410,6 +428,16 @@
   </div>
 
   <div id="gridWrap"></div>
+  </div>
+
+  <div id="wishlistPageView" style="display:none;">
+    <div class="controls">
+      <input class="search" id="wishlistTitleInput" placeholder="Movie or show title" style="flex:1;" />
+      <button class="btn btn-primary" id="wishlistAddBtn">Search</button>
+    </div>
+    <div id="wishlistSearchResults" style="margin-bottom:16px;"></div>
+    <div id="wishlistGridWrap"></div>
+  </div>
 </div>
 
 <!-- Add / Edit Modal -->
@@ -623,25 +651,39 @@
   </div>
 </div>
 
-<!-- Wishlist Modal -->
-<div class="overlay" id="wishlistOverlay" style="display:none;">
-  <div class="modal" style="max-width:480px;">
+<!-- Theme Modal -->
+<div class="overlay" id="themeOverlay" style="display:none;">
+  <div class="modal" style="max-width:380px;">
     <div class="modal-head">
-      <h2>Wishlist</h2>
-      <button class="close-x" id="closeWishlist">✕</button>
+      <h2>Theme</h2>
+      <button class="close-x" id="closeTheme">✕</button>
     </div>
     <div class="modal-body">
-      <p class="scan-hint" style="text-align:left; padding-left:0;">
-        Titles you don't own yet — separate from your real archive. Search, browse the matches, and tap the right one to add it.
-      </p>
-      <div class="lookup-row">
-        <input id="wishlistTitleInput" placeholder="Movie or show title" />
-        <button class="btn btn-primary" id="wishlistAddBtn">Search</button>
+      <div class="field">
+        <label>Accent Color</label>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <input type="color" id="accentColorInput" value="#ffd400" style="width:50px; height:40px; border:1px solid var(--line); background:none; cursor:pointer; padding:2px; border-radius:5px;" />
+          <div class="chips" id="accentPresets" style="flex:1;"></div>
+        </div>
       </div>
-      <div id="wishlistSearchResults" style="margin:8px 0;"></div>
-      <div class="divider">on your list</div>
-      <div id="wishlistBody"></div>
+      <div class="field" style="display:flex; align-items:center; gap:8px; margin-top:18px;">
+        <input type="checkbox" id="seasonalToggle" style="width:16px; height:16px; flex-shrink:0;" />
+        <label style="margin:0; text-transform:none; font-size:13px; color:var(--ink);" for="seasonalToggle">🎃🎄 Auto-shift palette for Halloween &amp; Christmas</label>
+      </div>
+      <p class="scan-hint" style="text-align:left; padding-left:0; margin-top:6px;">Seasonal shifts only apply when you haven't picked a custom color above.</p>
+      <button class="btn btn-ghost" id="resetThemeBtn" style="width:100%; margin-top:14px;">Reset to Default</button>
     </div>
+  </div>
+</div>
+
+<!-- Achievements Modal -->
+<div class="overlay" id="achievementsOverlay" style="display:none;">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head">
+      <h2>Achievements</h2>
+      <button class="close-x" id="closeAchievements">✕</button>
+    </div>
+    <div class="modal-body" id="achievementsBody"></div>
   </div>
 </div>
 
@@ -1302,7 +1344,129 @@
     $('statsOverlay').style.display = 'flex';
   });
   $('closeStats').addEventListener('click', ()=> $('statsOverlay').style.display = 'none');
+
+  // ---------------- Achievements ----------------
+  function computeAchievements(){
+    const total = collection.length;
+    const watchedCount = collection.filter(m=>m.watched).length;
+    const ratedCount = collection.filter(m=>m.myRating).length;
+    const maxCopies = collection.reduce((max,m)=> Math.max(max, findSiblings(m).length + 1), 0);
+    const horrorCount = collection.filter(m => (m.genres||[]).includes('Horror')).length;
+
+    return [
+      { icon:'🎬', name:'First Steps', desc:'Add your first title', unlocked: total >= 1 },
+      { icon:'📼', name:'Ten Strong', desc:'Own 10 titles', unlocked: total >= 10 },
+      { icon:'🗄️', name:'Serious Collector', desc:'Own 50 titles', unlocked: total >= 50 },
+      { icon:'🏛️', name:'Archive Master', desc:'Own 100 titles', unlocked: total >= 100 },
+      { icon:'🎞️', name:'Double Feature', desc:'Own the same title in 2+ formats', unlocked: maxCopies >= 2 },
+      { icon:'👁️', name:'Marathon Watcher', desc:'Mark 10 titles watched', unlocked: watchedCount >= 10 },
+      { icon:'⭐', name:"Critic's Choice", desc:'Rate 10 titles', unlocked: ratedCount >= 10 },
+      { icon:'📺', name:'Small Screen Fan', desc:'Add a TV show', unlocked: collection.some(m=>m.mediaType==='tv') },
+      { icon:'📹', name:'Old Reliable', desc:'Own something on VHS', unlocked: collection.some(m=>m.format==='VHS') },
+      { icon:'💿', name:'High Definition', desc:'Own something on Blu-ray', unlocked: collection.some(m=>m.format==='Blu-ray') },
+      { icon:'🎃', name:'Horror Head', desc:'Own 5 horror titles', unlocked: horrorCount >= 5 },
+      { icon:'💭', name:'Wishful Thinking', desc:'Add 5 titles to your wishlist', unlocked: wishlist.length >= 5 },
+    ];
+  }
+  function renderAchievements(){
+    const achievements = computeAchievements();
+    const unlockedCount = achievements.filter(a=>a.unlocked).length;
+    $('achievementsBody').innerHTML = `
+      <p style="text-align:center; font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--muted); margin-bottom:16px;">
+        ${unlockedCount} of ${achievements.length} unlocked
+      </p>
+      <div class="achv-grid">
+        ${achievements.map(a => `
+          <div class="achv-card${a.unlocked ? '' : ' locked'}">
+            <div class="achv-icon">${a.icon}</div>
+            <div class="achv-name">${escapeHtml(a.name)}</div>
+            <div class="achv-desc">${escapeHtml(a.desc)}</div>
+          </div>`).join('')}
+      </div>
+    `;
+  }
+  $('achievementsOpenBtn').addEventListener('click', ()=>{
+    $('settingsMenu').style.display = 'none';
+    renderAchievements();
+    $('achievementsOverlay').style.display = 'flex';
+  });
+  $('closeAchievements').addEventListener('click', ()=> $('achievementsOverlay').style.display = 'none');
+  $('achievementsOverlay').addEventListener('click', e=>{ if (e.target.id==='achievementsOverlay') $('achievementsOverlay').style.display='none'; });
   $('statsOverlay').addEventListener('click', e=>{ if (e.target.id==='statsOverlay') $('statsOverlay').style.display='none'; });
+
+  // ---------------- Theme: custom accent color + seasonal palettes ----------------
+  const ACCENT_KEY = 'shelf_custom_accent_v1';
+  const SEASONAL_KEY = 'shelf_seasonal_enabled_v1';
+  const ACCENT_PRESETS = ['#ffd400', '#e63946', '#2fd0e0', '#a463f2', '#3ddc84', '#ff6fae'];
+
+  function getCustomAccent(){ return localStorage.getItem(ACCENT_KEY) || ''; }
+  function setCustomAccent(v){ if (v) localStorage.setItem(ACCENT_KEY, v); else localStorage.removeItem(ACCENT_KEY); }
+  function getSeasonalEnabled(){ return localStorage.getItem(SEASONAL_KEY) !== '0'; }
+  function setSeasonalEnabled(v){ localStorage.setItem(SEASONAL_KEY, v ? '1' : '0'); }
+
+  function darkenHex(hex, amt){
+    hex = hex.replace('#', '');
+    let r = parseInt(hex.substring(0,2), 16);
+    let g = parseInt(hex.substring(2,4), 16);
+    let b = parseInt(hex.substring(4,6), 16);
+    r = Math.max(0, Math.round(r * (1 - amt)));
+    g = Math.max(0, Math.round(g * (1 - amt)));
+    b = Math.max(0, Math.round(b * (1 - amt)));
+    return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+  }
+
+  function applyTheme(){
+    const custom = getCustomAccent();
+    const seasonalOn = getSeasonalEnabled();
+    let accent = custom || '#ffd400';
+    let teal = '#2fd0e0';
+    if (seasonalOn && !custom){
+      const month = new Date().getMonth(); // 9 = October, 11 = December
+      if (month === 9){ accent = '#ff7518'; }
+      else if (month === 11){ accent = '#e63946'; teal = '#2ecc71'; }
+    }
+    document.documentElement.style.setProperty('--amber', accent);
+    document.documentElement.style.setProperty('--amber-dim', darkenHex(accent, 0.15));
+    document.documentElement.style.setProperty('--teal', teal);
+  }
+
+  function renderAccentPresets(){
+    $('accentPresets').innerHTML = ACCENT_PRESETS.map(c => `
+      <span class="chip accent-preset" data-color="${c}" style="background:${c}; width:26px; height:26px; padding:0; border-radius:50%; display:inline-block; cursor:pointer; border:2px solid var(--line);"></span>
+    `).join('');
+    document.querySelectorAll('.accent-preset').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const c = el.dataset.color;
+        $('accentColorInput').value = c;
+        setCustomAccent(c);
+        applyTheme();
+      });
+    });
+  }
+
+  $('themeOpenBtn').addEventListener('click', ()=>{
+    $('settingsMenu').style.display = 'none';
+    $('accentColorInput').value = getCustomAccent() || '#ffd400';
+    $('seasonalToggle').checked = getSeasonalEnabled();
+    renderAccentPresets();
+    $('themeOverlay').style.display = 'flex';
+  });
+  $('closeTheme').addEventListener('click', ()=> $('themeOverlay').style.display = 'none');
+  $('themeOverlay').addEventListener('click', e=>{ if (e.target.id==='themeOverlay') $('themeOverlay').style.display='none'; });
+  $('accentColorInput').addEventListener('input', ()=>{
+    setCustomAccent($('accentColorInput').value);
+    applyTheme();
+  });
+  $('seasonalToggle').addEventListener('change', ()=>{
+    setSeasonalEnabled($('seasonalToggle').checked);
+    applyTheme();
+  });
+  $('resetThemeBtn').addEventListener('click', ()=>{
+    setCustomAccent('');
+    $('accentColorInput').value = '#ffd400';
+    applyTheme();
+    toast('Theme reset to default.');
+  });
 
   // ---------------- Bulk trailer fetch ----------------
   async function runBulkTrailerFetch(){
@@ -1506,23 +1670,32 @@
   $('bulkTagsBtn').addEventListener('click', runBulkTagSuggest);
 
   // ---------------- Wishlist ----------------
+  function wishlistCardHtml(w){
+    const poster = w.posterUrl
+      ? `<img class="cover" src="${escapeAttr(w.posterUrl)}" alt="${escapeAttr(w.title)}" onerror="this.style.opacity='0.3'" />`
+      : `<div class="cover-fallback">${escapeHtml(w.title)}</div>`;
+    return `
+      <div class="case">
+        ${poster}
+        <div class="meta">
+          <p class="title">${escapeHtml(w.title)}${w.year?` <span style="color:var(--muted);font-weight:400;">(${escapeHtml(w.year)})</span>`:''}</p>
+          <div class="badgerow">
+            ${w.mediaType === 'tv' ? `<span class="badge fmt">📺 TV</span>` : ''}
+          </div>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <button type="button" class="btn btn-primary wishlist-promote" data-id="${escapeAttr(w.id)}" style="flex:1; font-size:11px; padding:7px 6px;">➕ Add</button>
+            <button type="button" class="btn btn-danger wishlist-remove" data-id="${escapeAttr(w.id)}" style="font-size:11px; padding:7px 9px;">🗑</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
   function renderWishlist(){
     if (!wishlist.length){
-      $('wishlistBody').innerHTML = `<p style="text-align:center; color:var(--muted); padding:20px 0; font-size:13px;">Nothing on your wishlist yet.</p>`;
+      $('wishlistGridWrap').innerHTML = `<div class="empty"><h3>Wishlist is empty</h3><p>Search above for something you don't own yet.</p></div>`;
       return;
     }
-    $('wishlistBody').innerHTML = wishlist.map(w => `
-      <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
-        ${w.posterUrl
-          ? `<img src="${escapeAttr(w.posterUrl)}" style="width:36px; height:54px; object-fit:cover; border-radius:3px; flex-shrink:0;" onerror="this.style.opacity='0.3'" />`
-          : `<div style="width:36px; height:54px; border-radius:3px; background:#0a1f4d; flex-shrink:0;"></div>`}
-        <div style="flex:1; min-width:0;">
-          <div style="font-size:13px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(w.title)}${w.year ? ` <span style="color:var(--muted);">(${escapeHtml(w.year)})</span>` : ''}</div>
-        </div>
-        <button type="button" class="btn btn-primary wishlist-promote" data-id="${escapeAttr(w.id)}" style="font-size:11px; padding:6px 10px; flex-shrink:0;">➕ Add</button>
-        <button type="button" class="btn btn-danger wishlist-remove" data-id="${escapeAttr(w.id)}" style="font-size:11px; padding:6px 10px; flex-shrink:0;">🗑</button>
-      </div>`).join('');
-
+    $('wishlistGridWrap').innerHTML = `<div class="grid">${wishlist.map(wishlistCardHtml).join('')}</div>`;
     document.querySelectorAll('.wishlist-promote').forEach(btn=>{
       btn.addEventListener('click', ()=> promoteWishlistItem(btn.dataset.id));
     });
@@ -1638,7 +1811,8 @@
     if (!item) return;
     wishlist = wishlist.filter(w => w.id !== id);
     saveCollection();
-    $('wishlistOverlay').style.display = 'none';
+    renderWishlist();
+    switchPage('archive');
     openAdd();
     setMediaType(item.mediaType === 'tv' ? 'tv' : 'movie');
     $('f_title').value = item.title || '';
@@ -1649,14 +1823,19 @@
     toast('Moved to the Add form — fill in the rest and save.');
   }
 
+  function switchPage(page){
+    document.querySelectorAll('#pageTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
+    $('archiveView').style.display = page === 'archive' ? 'block' : 'none';
+    $('wishlistPageView').style.display = page === 'wishlist' ? 'block' : 'none';
+    if (page === 'wishlist') renderWishlist();
+  }
+  document.querySelectorAll('#pageTabs .tab').forEach(t=>{
+    t.addEventListener('click', ()=> switchPage(t.dataset.page));
+  });
   $('wishlistOpenBtn').addEventListener('click', ()=>{
     $('settingsMenu').style.display = 'none';
-    $('wishlistSearchResults').innerHTML = '';
-    renderWishlist();
-    $('wishlistOverlay').style.display = 'flex';
+    switchPage('wishlist');
   });
-  $('closeWishlist').addEventListener('click', ()=> $('wishlistOverlay').style.display = 'none');
-  $('wishlistOverlay').addEventListener('click', e=>{ if (e.target.id==='wishlistOverlay') $('wishlistOverlay').style.display='none'; });
   $('wishlistAddBtn').addEventListener('click', async ()=>{
     const query = $('wishlistTitleInput').value.trim();
     if (!query){ toast('Type a title first.'); return; }
@@ -2660,6 +2839,7 @@
 
   // ---------------- Init ----------------
   (async function init(){
+    applyTheme();
     await loadCollection();
     render();
   })();
