@@ -394,11 +394,6 @@
     </div>
   </header>
 
-  <div class="tabs" id="pageTabs" style="max-width:280px; margin-bottom:18px;">
-    <div class="tab active" data-page="archive">🎬 Archive</div>
-    <div class="tab" data-page="wishlist">⭐ Wishlist</div>
-  </div>
-
   <div id="archiveView">
   <div class="controls">
     <button class="btn btn-primary" id="openAddBtn">+ Add Title</button>
@@ -1823,18 +1818,17 @@
     toast('Moved to the Add form — fill in the rest and save.');
   }
 
+  let currentPage = 'archive';
   function switchPage(page){
-    document.querySelectorAll('#pageTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
+    currentPage = page;
     $('archiveView').style.display = page === 'archive' ? 'block' : 'none';
     $('wishlistPageView').style.display = page === 'wishlist' ? 'block' : 'none';
+    $('wishlistOpenBtn').textContent = page === 'archive' ? '⭐ Wishlist' : '🎬 Back to Archive';
     if (page === 'wishlist') renderWishlist();
   }
-  document.querySelectorAll('#pageTabs .tab').forEach(t=>{
-    t.addEventListener('click', ()=> switchPage(t.dataset.page));
-  });
   $('wishlistOpenBtn').addEventListener('click', ()=>{
     $('settingsMenu').style.display = 'none';
-    switchPage('wishlist');
+    switchPage(currentPage === 'archive' ? 'wishlist' : 'archive');
   });
   $('wishlistAddBtn').addEventListener('click', async ()=>{
     const query = $('wishlistTitleInput').value.trim();
