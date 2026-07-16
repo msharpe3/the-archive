@@ -1823,7 +1823,7 @@
     currentPage = page;
     $('archiveView').style.display = page === 'archive' ? 'block' : 'none';
     $('wishlistPageView').style.display = page === 'wishlist' ? 'block' : 'none';
-    $('wishlistOpenBtn').textContent = page === 'archive' ? '⭐ Wishlist' : '🎬 Back to Archive';
+    $('wishlistOpenBtn').textContent = page === 'archive' ? '⭐ Wishlist' : '📼 Back to Archive';
     if (page === 'wishlist') renderWishlist();
   }
   $('wishlistOpenBtn').addEventListener('click', ()=>{
