@@ -663,7 +663,7 @@
       </div>
       <div class="field" style="display:flex; align-items:center; gap:8px; margin-top:18px;">
         <input type="checkbox" id="seasonalToggle" style="width:16px; height:16px; flex-shrink:0;" />
-        <label style="margin:0; text-transform:none; font-size:13px; color:var(--ink);" for="seasonalToggle">🎃🎄 Auto-shift palette for Halloween &amp; Christmas</label>
+        <label style="margin:0; text-transform:none; font-size:13px; color:var(--ink);" for="seasonalToggle">🎆🎃🎄 Auto-shift palette for July 4th, Halloween &amp; Christmas</label>
       </div>
       <p class="scan-hint" style="text-align:left; padding-left:0; margin-top:6px;">Seasonal shifts only apply when you haven't picked a custom color above.</p>
       <button class="btn btn-ghost" id="resetThemeBtn" style="width:100%; margin-top:14px;">Reset to Default</button>
@@ -765,6 +765,8 @@
   let draftAltPosters = [];
   let currentDraftCast = [];
   let currentDraftTmdbId = null;
+  let currentDraftCollectionId = null;
+  let currentDraftCollectionName = null;
   let html5Qrcode = null;
   let camRunning = false;
   let flashOn = false;
@@ -1104,6 +1106,10 @@
             </div>`).join('')}
         </div>
       ` : ''}
+      ${(m.collectionId && getTmdbKey()) ? `
+        <div class="divider">series progress</div>
+        <div id="seriesContainer"><div class="status-line"><span class="spinner"></span> Checking the series…</div></div>
+      ` : ''}
       ${(m.tmdbId && getTmdbKey()) ? `
         <div class="divider">you might also like</div>
         <div id="recsContainer"><div class="status-line"><span class="spinner"></span> Finding similar titles…</div></div>
@@ -1158,6 +1164,27 @@
     };
     $('detailOverlay').style.display = 'flex';
     if (m.tmdbId && getTmdbKey()) loadRecommendations(m);
+    if (m.collectionId && getTmdbKey()) loadSeriesProgress(m);
+  }
+
+  async function loadSeriesProgress(m){
+    const container = document.getElementById('seriesContainer');
+    if (!container) return;
+    const parts = await tmdbGetCollection(m.collectionId);
+    if (!document.getElementById('seriesContainer')) return; // detail view changed while loading
+    if (!parts || !parts.length){
+      container.innerHTML = '';
+      return;
+    }
+    const ownedTmdbIds = new Set(collection.filter(c => c.tmdbId).map(c => c.tmdbId));
+    const ownedTitles = new Set(collection.map(c => normalizeTitle(c.title)));
+    const total = parts.length;
+    const ownedCount = parts.filter(p => ownedTmdbIds.has(p.id) || ownedTitles.has(normalizeTitle(p.title))).length;
+    const pct = Math.round((ownedCount / total) * 100);
+    container.innerHTML = `
+      <div style="font-size:12.5px; color:var(--ink); margin-bottom:8px;">${escapeHtml(m.collectionName || 'Series')} — you own ${ownedCount} of ${total}</div>
+      <div class="stat-bar-track" style="height:10px;"><div class="stat-bar-fill" style="width:${Math.max(4, pct)}%;"></div></div>
+    `;
   }
 
   async function loadRecommendations(m){
@@ -1416,8 +1443,9 @@
     let accent = custom || '#ffd400';
     let teal = '#2fd0e0';
     if (seasonalOn && !custom){
-      const month = new Date().getMonth(); // 9 = October, 11 = December
-      if (month === 9){ accent = '#ff7518'; }
+      const month = new Date().getMonth(); // 6 = July, 9 = October, 11 = December
+      if (month === 6){ accent = '#B22234'; teal = '#F0F0F0'; } // red, white — the deep blue background covers "blue"
+      else if (month === 9){ accent = '#ff7518'; }
       else if (month === 11){ accent = '#e63946'; teal = '#2ecc71'; }
     }
     document.documentElement.style.setProperty('--amber', accent);
@@ -1566,7 +1594,7 @@
       toast('Add a TMDB key under 🔑 Lookup Setup first.');
       return;
     }
-    const targets = collection.filter(m => !m.tmdbId);
+    const targets = collection.filter(m => !m.tmdbId || (m.mediaType !== 'tv' && !m.seriesChecked));
     if (!targets.length){
       toast('Every title is already linked (or your archive is empty).');
       return;
@@ -1578,17 +1606,29 @@
     $('closeBulkBackfill').style.display = 'none';
 
     let found = 0;
+    let seriesFound = 0;
     for (let i = 0; i < targets.length; i++){
       const m = targets[i];
       $('bulkBackfillStatus').textContent = `Checking "${m.title}"…`;
       $('bulkBackfillCount').textContent = `${i + 1} of ${targets.length}`;
       try{
-        const id = m.mediaType === 'tv'
-          ? await tmdbSearchTvId(m.title, m.year)
-          : await tmdbSearchMovieId(m.title, m.year);
-        if (id){
-          m.tmdbId = id;
-          found++;
+        if (!m.tmdbId){
+          const id = m.mediaType === 'tv'
+            ? await tmdbSearchTvId(m.title, m.year)
+            : await tmdbSearchMovieId(m.title, m.year);
+          if (id){
+            m.tmdbId = id;
+            found++;
+          }
+        }
+        if (m.mediaType !== 'tv' && m.tmdbId && !m.seriesChecked){
+          const info = await tmdbGetCollectionInfoForMovie(m.tmdbId);
+          if (info){
+            m.collectionId = info.collectionId;
+            m.collectionName = info.collectionName;
+            if (info.collectionId) seriesFound++;
+          }
+          m.seriesChecked = true;
         }
       }catch(e){ /* skip this one, keep going */ }
       await new Promise(r => setTimeout(r, 300)); // stay gentle with the free API quota
@@ -1598,7 +1638,7 @@
     render();
 
     $('bulkBackfillSpinner').style.display = 'none';
-    $('bulkBackfillStatus').textContent = `Done — linked ${found} of ${targets.length} titles. Recommendations will show up for those now.`;
+    $('bulkBackfillStatus').textContent = `Done — linked ${found} of ${targets.length} titles, found series info for ${seriesFound}.`;
     $('bulkBackfillCount').textContent = '';
     $('bulkBackfillDoneBtn').style.display = 'block';
     $('closeBulkBackfill').style.display = 'inline-block';
@@ -1918,6 +1958,8 @@
     renderAltPosterThumbs();
     currentDraftCast = [];
     currentDraftTmdbId = null;
+    currentDraftCollectionId = null;
+    currentDraftCollectionName = null;
     $('draftPosterImg').style.display = 'none';
     $('draftPosterFallback').style.display = 'flex';
     $('draftPosterFallback').textContent = '?';
@@ -1995,6 +2037,8 @@
     draftAltPosters = (m.altPosters || []).slice();
     currentDraftCast = (m.cast || []).slice();
     currentDraftTmdbId = m.tmdbId || null;
+    currentDraftCollectionId = m.collectionId || null;
+    currentDraftCollectionName = m.collectionName || null;
     renderAltPosterThumbs();
     $('addOverlay').style.display = 'flex';
   }
@@ -2221,6 +2265,8 @@
 
       return {
         tmdbId: d.id,
+        collectionId: d.belongs_to_collection ? d.belongs_to_collection.id : null,
+        collectionName: d.belongs_to_collection ? d.belongs_to_collection.name : null,
         title: d.title || '',
         year: (d.release_date || '').slice(0, 4),
         plot: d.overview || '',
@@ -2282,6 +2328,34 @@
       const data = await res.json();
       const m = data.results && data.results[0];
       return m ? m.id : null;
+    }catch(e){
+      return null;
+    }
+  }
+
+  // Lightweight — just belongs_to_collection, no credits/images/videos. Used by
+  // the backfill tool to retroactively light up "series progress" too.
+  async function tmdbGetCollectionInfoForMovie(id){
+    const key = getTmdbKey();
+    if (!key || !id) return null;
+    try{
+      const res = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${encodeURIComponent(key)}`);
+      const data = await res.json();
+      return data.belongs_to_collection
+        ? { collectionId: data.belongs_to_collection.id, collectionName: data.belongs_to_collection.name }
+        : { collectionId: null, collectionName: null };
+    }catch(e){
+      return null;
+    }
+  }
+
+  async function tmdbGetCollection(id){
+    const key = getTmdbKey();
+    if (!key || !id) return null;
+    try{
+      const res = await fetch(`https://api.themoviedb.org/3/collection/${id}?api_key=${encodeURIComponent(key)}`);
+      const data = await res.json();
+      return data.parts || [];
     }catch(e){
       return null;
     }
@@ -2388,6 +2462,8 @@
     }
     currentDraftCast = data.cast || [];
     currentDraftTmdbId = data.tmdbId || null;
+    currentDraftCollectionId = data.collectionId || null;
+    currentDraftCollectionName = data.collectionName || null;
   }
 
   async function omdbLookupByTitle(title, year, type){
@@ -2673,6 +2749,9 @@
       altPosters: draftAltPosters.slice(),
       cast: currentDraftCast.slice(),
       tmdbId: currentDraftTmdbId,
+      collectionId: currentDraftCollectionId,
+      collectionName: currentDraftCollectionName,
+      seriesChecked: currentMediaType !== 'tv' && !!currentDraftTmdbId,
     };
 
     let isDuplicate = false;
